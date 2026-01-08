@@ -120,6 +120,44 @@ export function buildObservationPrompt(obs: Observation): string {
 }
 
 /**
+ * Build prompt for a BATCH of observations (cost reduction)
+ * Combines multiple tool uses into a single prompt for one API call.
+ * The AI should produce one <observation> per tool use in the batch.
+ */
+export function buildBatchObservationPrompt(observations: Observation[]): string {
+  const observationXmls = observations.map(obs => {
+    // Safely parse tool_input and tool_output
+    let toolInput: any;
+    let toolOutput: any;
+
+    try {
+      toolInput = typeof obs.tool_input === 'string' ? JSON.parse(obs.tool_input) : obs.tool_input;
+    } catch {
+      toolInput = obs.tool_input;
+    }
+
+    try {
+      toolOutput = typeof obs.tool_output === 'string' ? JSON.parse(obs.tool_output) : obs.tool_output;
+    } catch {
+      toolOutput = obs.tool_output;
+    }
+
+    return `<observed_from_primary_session>
+  <what_happened>${obs.tool_name}</what_happened>
+  <occurred_at>${new Date(obs.created_at_epoch).toISOString()}</occurred_at>${obs.cwd ? `\n  <working_directory>${obs.cwd}</working_directory>` : ''}
+  <parameters>${JSON.stringify(toolInput, null, 2)}</parameters>
+  <outcome>${JSON.stringify(toolOutput, null, 2)}</outcome>
+</observed_from_primary_session>`;
+  });
+
+  return `<batch_observations count="${observations.length}">
+${observationXmls.join('\n\n')}
+</batch_observations>
+
+Analyze each tool use above and produce one <observation> per tool. Output all observations in sequence.`;
+}
+
+/**
  * Build prompt to generate progress summary
  */
 export function buildSummaryPrompt(session: SDKSession, mode: ModeConfig): string {

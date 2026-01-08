@@ -190,8 +190,19 @@ NEVER fetch full details without filtering first. 10x token savings.`,
     description: 'Step 1: Search memory. Returns index with IDs. Params: query, limit, project, type, obs_type, dateStart, dateEnd, offset, orderBy',
     inputSchema: {
       type: 'object',
-      properties: {},
-      additionalProperties: true
+      properties: {
+        _: { type: 'boolean' },
+        query: { type: 'string', description: 'Search query string' },
+        limit: { type: 'number', description: 'Max results to return' },
+        project: { type: 'string', description: 'Filter by project name' },
+        type: { type: 'string', description: 'Filter by observation type' },
+        obs_type: { type: 'string', description: 'Filter by observation type' },
+        dateStart: { type: 'string', description: 'Filter from date' },
+        dateEnd: { type: 'string', description: 'Filter to date' },
+        offset: { type: 'number', description: 'Skip N results' },
+        orderBy: { type: 'string', description: 'Sort order' }
+      },
+      required: ['_']
     },
     handler: async (args: any) => {
       const endpoint = TOOL_ENDPOINT_MAP['search'];
@@ -203,8 +214,15 @@ NEVER fetch full details without filtering first. 10x token savings.`,
     description: 'Step 2: Get context around results. Params: anchor (observation ID) OR query (finds anchor automatically), depth_before, depth_after, project',
     inputSchema: {
       type: 'object',
-      properties: {},
-      additionalProperties: true
+      properties: {
+        _: { type: 'boolean' },
+        anchor: { type: 'number', description: 'Observation ID to anchor timeline around' },
+        query: { type: 'string', description: 'Search query to find anchor automatically' },
+        depth_before: { type: 'number', description: 'Number of observations before anchor' },
+        depth_after: { type: 'number', description: 'Number of observations after anchor' },
+        project: { type: 'string', description: 'Filter by project name' }
+      },
+      required: ['_']
     },
     handler: async (args: any) => {
       const endpoint = TOOL_ENDPOINT_MAP['timeline'];

@@ -129,6 +129,11 @@ export class WorkerService {
       this.broadcastProcessingStatus();
     });
 
+    // Set callback for killing orphan subprocesses (injected to avoid circular deps)
+    this.sessionManager.setOnKillOrphanSubprocesses((memorySessionId: string) => {
+      return this.sdkAgent.killOrphanSubprocesses(memorySessionId);
+    });
+
     // Initialize MCP client
     this.mcpClient = new Client({
       name: 'worker-search-proxy',

@@ -50,6 +50,10 @@ export interface SettingsDefaults {
   // Feature Toggles
   CLAUDE_MEM_CONTEXT_SHOW_LAST_SUMMARY: string;
   CLAUDE_MEM_CONTEXT_SHOW_LAST_MESSAGE: string;
+  // Batching Configuration
+  CLAUDE_MEM_BATCHING_ENABLED: string;       // 'true' | 'false' - enable batched observation processing
+  CLAUDE_MEM_BATCH_IDLE_TIMEOUT: string;     // ms before flushing idle queue (default: 15000)
+  CLAUDE_MEM_BATCH_MAX_SIZE: string;         // max observations before forced flush (default: 20)
 }
 
 export class SettingsDefaultsManager {
@@ -94,6 +98,10 @@ export class SettingsDefaultsManager {
     // Feature Toggles
     CLAUDE_MEM_CONTEXT_SHOW_LAST_SUMMARY: 'true',
     CLAUDE_MEM_CONTEXT_SHOW_LAST_MESSAGE: 'false',
+    // Batching Configuration
+    CLAUDE_MEM_BATCHING_ENABLED: 'false',       // Off by default until tested
+    CLAUDE_MEM_BATCH_IDLE_TIMEOUT: '15000',     // 15 seconds
+    CLAUDE_MEM_BATCH_MAX_SIZE: '20',            // Max observations before forced flush
   };
 
   /**

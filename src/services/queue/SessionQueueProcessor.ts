@@ -38,6 +38,42 @@ export class SessionQueueProcessor {
     }
   }
 
+  /**
+   * Create an async iterator that yields BATCHES of messages.
+   * After wake-up, drains all available messages and yields them as a single batch.
+   * This enables batch prompt construction for cost reduction.
+   */
+  async *createBatchIterator(sessionDbId: number, signal: AbortSignal): AsyncIterableIterator<PendingMessageWithId[]> {
+    while (!signal.aborted) {
+      try {
+        // Drain all available messages from queue
+        const batch: PendingMessageWithId[] = [];
+        let persistentMessage = this.store.claimAndDelete(sessionDbId);
+
+        while (persistentMessage) {
+          batch.push(this.toPendingMessageWithId(persistentMessage));
+          persistentMessage = this.store.claimAndDelete(sessionDbId);
+        }
+
+        if (batch.length > 0) {
+          // Yield the entire batch for processing
+          logger.info('BATCH', `BATCH_YIELD | sessionDbId=${sessionDbId} | count=${batch.length}`, {
+            sessionId: sessionDbId
+          });
+          yield batch;
+        } else {
+          // Queue empty - wait for wake-up event (flush signal)
+          await this.waitForMessage(signal);
+        }
+      } catch (error) {
+        if (signal.aborted) return;
+        logger.error('SESSION', 'Error in batch processor loop', { sessionDbId }, error as Error);
+        // Small backoff to prevent tight loop on DB error
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    }
+  }
+
   private toPendingMessageWithId(msg: PersistentPendingMessage): PendingMessageWithId {
     const pending = this.store.toPendingMessage(msg);
     return {

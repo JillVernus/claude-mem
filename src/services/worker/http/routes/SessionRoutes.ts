@@ -125,8 +125,35 @@ export class SessionRoutes extends BaseRouteHandler {
     const agent = provider === 'openrouter' ? this.openRouterAgent : (provider === 'gemini' ? this.geminiAgent : this.sdkAgent);
     const agentName = provider === 'openrouter' ? 'OpenRouter' : (provider === 'gemini' ? 'Gemini' : 'Claude SDK');
 
-    logger.info('SESSION', `Generator auto-starting (${source}) using ${agentName}`, {
+    // CRITICAL: Kill orphan subprocesses BEFORE starting new generator
+    // This prevents zombie process accumulation when AbortController.abort() fails to kill
+    if (session.memorySessionId && provider === 'claude') {
+      const killed = this.sdkAgent.killOrphanSubprocesses(session.memorySessionId);
+      if (killed > 0) {
+        logger.info('SESSION', `Killed ${killed} orphan subprocess(es) before starting new generator`, {
+          sessionId: session.sessionDbId,
+          memorySessionId: session.memorySessionId
+        });
+      }
+    }
+
+    // DIAGNOSTIC: Generate unique ID for this generator instance
+    const generatorId = `gen-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+
+    // DIAGNOSTIC: Check if generator is already running (potential bug)
+    if (session.generatorPromise) {
+      logger.warn('SESSION', `DIAGNOSTIC: Starting generator while one already running!`, {
+        sessionId: session.sessionDbId,
+        newGeneratorId: generatorId,
+        source,
+        provider: agentName,
+        existingProvider: session.currentProvider
+      });
+    }
+
+    logger.info('SESSION', `Generator STARTING | id=${generatorId} | source=${source} | provider=${agentName}`, {
       sessionId: session.sessionDbId,
+      generatorId,
       queueDepth: session.pendingMessages.length,
       historyLength: session.conversationHistory.length
     });
@@ -137,10 +164,16 @@ export class SessionRoutes extends BaseRouteHandler {
     session.generatorPromise = agent.startSession(session, this.workerService)
       .catch(error => {
         // Only log non-abort errors
-        if (session.abortController.signal.aborted) return;
-        
-        logger.error('SESSION', `Generator failed`, {
+        if (session.abortController.signal.aborted) {
+          logger.debug('SESSION', `Generator ${generatorId} caught error after abort (expected)`, {
+            sessionId: session.sessionDbId
+          });
+          return;
+        }
+
+        logger.error('SESSION', `Generator FAILED | id=${generatorId}`, {
           sessionId: session.sessionDbId,
+          generatorId,
           provider: provider,
           error: error.message
         }, error);
@@ -165,11 +198,13 @@ export class SessionRoutes extends BaseRouteHandler {
         const sessionDbId = session.sessionDbId;
         const wasAborted = session.abortController.signal.aborted;
 
-        if (wasAborted) {
-          logger.info('SESSION', `Generator aborted`, { sessionId: sessionDbId });
-        } else {
-          logger.warn('SESSION', `Generator exited unexpectedly`, { sessionId: sessionDbId });
-        }
+        // DIAGNOSTIC: Log generator end with full context
+        logger.info('SESSION', `Generator ENDED | id=${generatorId} | wasAborted=${wasAborted}`, {
+          sessionId: sessionDbId,
+          generatorId,
+          wasAborted,
+          reason: wasAborted ? 'aborted' : 'exited-unexpectedly'
+        });
 
         session.generatorPromise = null;
         session.currentProvider = null;
@@ -182,12 +217,18 @@ export class SessionRoutes extends BaseRouteHandler {
             const pendingCount = pendingStore.getPendingCount(sessionDbId);
 
             if (pendingCount > 0) {
-              logger.info('SESSION', `Restarting generator after crash/exit with pending work`, {
+              logger.info('SESSION', `Generator RESTARTING | oldId=${generatorId} | pendingCount=${pendingCount}`, {
                 sessionId: sessionDbId,
+                oldGeneratorId: generatorId,
                 pendingCount
               });
 
-              // Create new AbortController for the restarted generator
+              // DIAGNOSTIC: Log abort call
+              logger.debug('SESSION', `DIAGNOSTIC: Calling abort() on old controller before restart`, {
+                sessionId: sessionDbId,
+                generatorId
+              });
+              session.abortController.abort();
               session.abortController = new AbortController();
 
               // Small delay before restart
@@ -195,14 +236,19 @@ export class SessionRoutes extends BaseRouteHandler {
                 const stillExists = this.sessionManager.getSession(sessionDbId);
                 if (stillExists && !stillExists.generatorPromise) {
                   this.startGeneratorWithProvider(stillExists, this.getSelectedProvider(), 'crash-recovery');
+                } else if (stillExists?.generatorPromise) {
+                  logger.warn('SESSION', `DIAGNOSTIC: Skipped restart - generator already running`, {
+                    sessionId: sessionDbId
+                  });
                 }
               }, 1000);
             } else {
               // No pending work - abort to kill the child process
-              session.abortController.abort();
-              logger.debug('SESSION', 'Aborted controller after natural completion', {
-                sessionId: sessionDbId
+              logger.debug('SESSION', `DIAGNOSTIC: Calling abort() after natural completion (no pending work)`, {
+                sessionId: sessionDbId,
+                generatorId
               });
+              session.abortController.abort();
             }
           } catch (e) {
             // Ignore errors during recovery check, but still abort to prevent leaks
@@ -289,8 +335,9 @@ export class SessionRoutes extends BaseRouteHandler {
       });
     }
 
-    // Start agent in background using the helper method
-    this.startGeneratorWithProvider(session, this.getSelectedProvider(), 'init');
+    // LAZY START: Don't start generator on /init - wait for first observation
+    // Generator will be started by ensureGeneratorRunning() when observations arrive
+    // This prevents wasted resources polling an empty queue
 
     // Broadcast session started event
     this.eventBroadcaster.broadcastSessionStarted(sessionDbId, session.project);
@@ -504,6 +551,10 @@ export class SessionRoutes extends BaseRouteHandler {
     const sessionDbId = store.createSDKSession(contentSessionId, '', '');
     const promptNumber = store.getPromptNumberFromUserPrompts(contentSessionId);
 
+    // BATCHING: Flush any pending observations before summarizing (end of turn)
+    // This is the primary flush trigger - ensures all observations are processed
+    this.sessionManager.flushBatch(sessionDbId);
+
     // Privacy check: skip if user prompt was entirely private
     const userPrompt = PrivacyCheckValidator.checkUserPromptPrivacy(
       store,
@@ -559,6 +610,10 @@ export class SessionRoutes extends BaseRouteHandler {
 
     // Step 1: Create/get SDK session (idempotent INSERT OR IGNORE)
     const sessionDbId = store.createSDKSession(contentSessionId, project, prompt);
+
+    // BATCHING: Flush any pending observations from previous turn before starting new one
+    // This ensures observations are processed even if idle timeout didn't fire
+    this.sessionManager.flushBatch(sessionDbId);
 
     // Verify session creation with DB lookup
     const dbSession = store.getSessionById(sessionDbId);

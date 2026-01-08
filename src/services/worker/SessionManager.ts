@@ -14,13 +14,18 @@ import { logger } from '../../utils/logger.js';
 import type { ActiveSession, PendingMessage, PendingMessageWithId, ObservationData } from '../worker-types.js';
 import { PendingMessageStore } from '../sqlite/PendingMessageStore.js';
 import { SessionQueueProcessor } from '../queue/SessionQueueProcessor.js';
+import { SettingsDefaultsManager } from '../../shared/SettingsDefaultsManager.js';
+import { USER_SETTINGS_PATH } from '../../shared/paths.js';
 
 export class SessionManager {
   private dbManager: DatabaseManager;
   private sessions: Map<number, ActiveSession> = new Map();
   private sessionQueues: Map<number, EventEmitter> = new Map();
   private onSessionDeletedCallback?: () => void;
+  private onKillOrphanSubprocesses?: (memorySessionId: string) => number;
   private pendingStore: PendingMessageStore | null = null;
+  // Batching: idle timers per session (cleaned up on session delete)
+  private idleTimers: Map<number, ReturnType<typeof setTimeout>> = new Map();
 
   constructor(dbManager: DatabaseManager) {
     this.dbManager = dbManager;
@@ -42,6 +47,13 @@ export class SessionManager {
    */
   setOnSessionDeleted(callback: () => void): void {
     this.onSessionDeletedCallback = callback;
+  }
+
+  /**
+   * Set callback to kill orphan subprocesses (injected by WorkerService to avoid circular deps)
+   */
+  setOnKillOrphanSubprocesses(callback: (memorySessionId: string) => number): void {
+    this.onKillOrphanSubprocesses = callback;
   }
 
   /**
@@ -204,6 +216,31 @@ export class SessionManager {
       logger.info('QUEUE', `ENQUEUED | sessionDbId=${sessionDbId} | messageId=${messageId} | type=observation | tool=${toolSummary} | depth=${queueDepth}`, {
         sessionId: sessionDbId
       });
+
+      // Batching logic: check settings to decide immediate vs batched processing
+      const settings = SettingsDefaultsManager.loadFromFile(USER_SETTINGS_PATH);
+      const batchingEnabled = settings.CLAUDE_MEM_BATCHING_ENABLED === 'true';
+
+      if (batchingEnabled) {
+        // Batched mode: start/reset idle timer, check overflow
+        const idleTimeout = parseInt(settings.CLAUDE_MEM_BATCH_IDLE_TIMEOUT, 10) || 15000;
+        const maxBatchSize = parseInt(settings.CLAUDE_MEM_BATCH_MAX_SIZE, 10) || 20;
+
+        // Check for overflow (immediate flush if queue too large)
+        if (queueDepth >= maxBatchSize) {
+          logger.info('BATCH', `OVERFLOW | sessionDbId=${sessionDbId} | depth=${queueDepth} | max=${maxBatchSize}`, {
+            sessionId: sessionDbId
+          });
+          this.flushBatch(sessionDbId);
+        } else {
+          // Reset idle timer
+          this.resetIdleTimer(sessionDbId, idleTimeout);
+        }
+      } else {
+        // Immediate mode (current behavior): notify generator right away
+        const emitter = this.sessionQueues.get(sessionDbId);
+        emitter?.emit('message');
+      }
     } catch (error) {
       logger.error('SESSION', 'Failed to persist observation to DB', {
         sessionId: sessionDbId,
@@ -211,10 +248,6 @@ export class SessionManager {
       }, error);
       throw error; // Don't continue if we can't persist
     }
-
-    // Notify generator immediately (zero latency)
-    const emitter = this.sessionQueues.get(sessionDbId);
-    emitter?.emit('message');
   }
 
   /**
@@ -268,6 +301,18 @@ export class SessionManager {
     // Abort the SDK agent
     session.abortController.abort();
 
+    // CRITICAL: Kill orphan subprocesses that abort() may not have killed
+    // This prevents zombie process accumulation on Linux
+    if (session.memorySessionId && this.onKillOrphanSubprocesses) {
+      const killed = this.onKillOrphanSubprocesses(session.memorySessionId);
+      if (killed > 0) {
+        logger.info('SESSION', `Killed ${killed} orphan subprocess(es) on session delete`, {
+          sessionId: sessionDbId,
+          memorySessionId: session.memorySessionId
+        });
+      }
+    }
+
     // Wait for generator to finish
     if (session.generatorPromise) {
       await session.generatorPromise.catch(error => {
@@ -278,6 +323,7 @@ export class SessionManager {
     // Cleanup
     this.sessions.delete(sessionDbId);
     this.sessionQueues.delete(sessionDbId);
+    this.clearIdleTimer(sessionDbId);  // Clean up batching timer
 
     logger.info('SESSION', 'Session deleted', {
       sessionId: sessionDbId,
@@ -289,6 +335,61 @@ export class SessionManager {
     if (this.onSessionDeletedCallback) {
       this.onSessionDeletedCallback();
     }
+  }
+
+  // =====================================================
+  // BATCHING: Idle Timer & Flush Logic
+  // =====================================================
+
+  /**
+   * Reset (or start) the idle timer for a session.
+   * When the timer fires, it triggers a batch flush.
+   */
+  private resetIdleTimer(sessionDbId: number, timeoutMs: number): void {
+    this.clearIdleTimer(sessionDbId);
+
+    const timer = setTimeout(() => {
+      logger.info('BATCH', `IDLE_TIMEOUT | sessionDbId=${sessionDbId} | timeout=${timeoutMs}ms`, {
+        sessionId: sessionDbId
+      });
+      this.flushBatch(sessionDbId);
+    }, timeoutMs);
+
+    this.idleTimers.set(sessionDbId, timer);
+  }
+
+  /**
+   * Clear the idle timer for a session (e.g., on flush or delete)
+   */
+  private clearIdleTimer(sessionDbId: number): void {
+    const timer = this.idleTimers.get(sessionDbId);
+    if (timer) {
+      clearTimeout(timer);
+      this.idleTimers.delete(sessionDbId);
+    }
+  }
+
+  /**
+   * Flush the batch: emit 'message' to wake up the SDK agent.
+   * Called on: idle timeout, turn end (UserPromptSubmit), overflow, or session end.
+   */
+  flushBatch(sessionDbId: number): void {
+    this.clearIdleTimer(sessionDbId);
+
+    const queueDepth = this.getPendingStore().getPendingCount(sessionDbId);
+    if (queueDepth === 0) {
+      logger.debug('BATCH', `FLUSH_SKIP | sessionDbId=${sessionDbId} | reason=empty_queue`, {
+        sessionId: sessionDbId
+      });
+      return;
+    }
+
+    logger.info('BATCH', `FLUSH | sessionDbId=${sessionDbId} | depth=${queueDepth}`, {
+      sessionId: sessionDbId
+    });
+
+    const emitter = this.sessionQueues.get(sessionDbId);
+    emitter?.emit('message');
   }
 
   /**
@@ -376,6 +477,40 @@ export class SessionManager {
       }
 
       yield message;
+    }
+  }
+
+  /**
+   * Get BATCH iterator for SDKAgent to consume (event-driven, batched processing)
+   * Yields arrays of messages after each flush signal.
+   * Enables batch prompt construction for cost reduction.
+   */
+  async *getBatchIterator(sessionDbId: number): AsyncIterableIterator<PendingMessageWithId[]> {
+    // Auto-initialize from database if needed (handles worker restarts)
+    let session = this.sessions.get(sessionDbId);
+    if (!session) {
+      session = this.initializeSession(sessionDbId);
+    }
+
+    const emitter = this.sessionQueues.get(sessionDbId);
+    if (!emitter) {
+      throw new Error(`No emitter for session ${sessionDbId}`);
+    }
+
+    const processor = new SessionQueueProcessor(this.getPendingStore(), emitter);
+
+    // Use batch iterator - yields arrays of messages after flush
+    for await (const batch of processor.createBatchIterator(sessionDbId, session.abortController.signal)) {
+      // Track earliest timestamp from batch for accurate observation timestamps
+      for (const message of batch) {
+        if (session.earliestPendingTimestamp === null) {
+          session.earliestPendingTimestamp = message._originalTimestamp;
+        } else {
+          session.earliestPendingTimestamp = Math.min(session.earliestPendingTimestamp, message._originalTimestamp);
+        }
+      }
+
+      yield batch;
     }
   }
 

@@ -8,13 +8,13 @@
  * - Sync to database and Chroma
  */
 
-import { execSync } from 'child_process';
+import { execSync, spawnSync } from 'child_process';
 import { homedir } from 'os';
 import path from 'path';
 import { DatabaseManager } from './DatabaseManager.js';
 import { SessionManager } from './SessionManager.js';
 import { logger } from '../../utils/logger.js';
-import { buildInitPrompt, buildObservationPrompt, buildSummaryPrompt, buildContinuationPrompt } from '../../sdk/prompts.js';
+import { buildInitPrompt, buildObservationPrompt, buildBatchObservationPrompt, buildSummaryPrompt, buildContinuationPrompt } from '../../sdk/prompts.js';
 import { SettingsDefaultsManager } from '../../shared/SettingsDefaultsManager.js';
 import { USER_SETTINGS_PATH } from '../../shared/paths.js';
 import type { ActiveSession, SDKUserMessage } from '../worker-types.js';
@@ -291,63 +291,139 @@ export class SDKAgent {
       isSynthetic: true
     };
 
-    // Consume pending messages from SessionManager (event-driven, no polling)
-    for await (const message of this.sessionManager.getMessageIterator(session.sessionDbId)) {
-      // Capture cwd from each message for worktree support
-      if (message.cwd) {
-        cwdTracker.lastCwd = message.cwd;
-      }
+    // Check if batching is enabled
+    const settings = SettingsDefaultsManager.loadFromFile(USER_SETTINGS_PATH);
+    const batchingEnabled = settings.CLAUDE_MEM_BATCHING_ENABLED === 'true';
 
-      if (message.type === 'observation') {
-        // Update last prompt number
-        if (message.prompt_number !== undefined) {
-          session.lastPromptNumber = message.prompt_number;
+    if (batchingEnabled) {
+      // BATCHED MODE: Consume batches of messages, build combined prompts
+      for await (const batch of this.sessionManager.getBatchIterator(session.sessionDbId)) {
+        // Separate observations from summarize requests
+        const observations: typeof batch = [];
+        const summarizeRequests: typeof batch = [];
+
+        for (const message of batch) {
+          if (message.cwd) {
+            cwdTracker.lastCwd = message.cwd;
+          }
+          if (message.type === 'observation') {
+            if (message.prompt_number !== undefined) {
+              session.lastPromptNumber = message.prompt_number;
+            }
+            observations.push(message);
+          } else if (message.type === 'summarize') {
+            summarizeRequests.push(message);
+          }
         }
 
-        const obsPrompt = buildObservationPrompt({
-          id: 0, // Not used in prompt
-          tool_name: message.tool_name!,
-          tool_input: JSON.stringify(message.tool_input),
-          tool_output: JSON.stringify(message.tool_response),
-          created_at_epoch: Date.now(),
-          cwd: message.cwd
-        });
+        // Yield batched observation prompt (if any observations)
+        if (observations.length > 0) {
+          const batchPrompt = buildBatchObservationPrompt(observations.map(obs => ({
+            id: 0,
+            tool_name: obs.tool_name!,
+            tool_input: JSON.stringify(obs.tool_input),
+            tool_output: JSON.stringify(obs.tool_response),
+            created_at_epoch: obs._originalTimestamp || Date.now(),
+            cwd: obs.cwd
+          })));
 
-        // Add to shared conversation history for provider interop
-        session.conversationHistory.push({ role: 'user', content: obsPrompt });
+          logger.info('BATCH', `BATCH_PROMPT | sessionDbId=${session.sessionDbId} | count=${observations.length}`, {
+            sessionId: session.sessionDbId
+          });
 
-        yield {
-          type: 'user',
-          message: {
-            role: 'user',
-            content: obsPrompt
-          },
-          session_id: session.contentSessionId,
-          parent_tool_use_id: null,
-          isSynthetic: true
-        };
-      } else if (message.type === 'summarize') {
-        const summaryPrompt = buildSummaryPrompt({
-          id: session.sessionDbId,
-          memory_session_id: session.memorySessionId,
-          project: session.project,
-          user_prompt: session.userPrompt,
-          last_assistant_message: message.last_assistant_message || ''
-        }, mode);
+          session.conversationHistory.push({ role: 'user', content: batchPrompt });
 
-        // Add to shared conversation history for provider interop
-        session.conversationHistory.push({ role: 'user', content: summaryPrompt });
+          yield {
+            type: 'user',
+            message: {
+              role: 'user',
+              content: batchPrompt
+            },
+            session_id: session.contentSessionId,
+            parent_tool_use_id: null,
+            isSynthetic: true
+          };
+        }
 
-        yield {
-          type: 'user',
-          message: {
-            role: 'user',
-            content: summaryPrompt
-          },
-          session_id: session.contentSessionId,
-          parent_tool_use_id: null,
-          isSynthetic: true
-        };
+        // Yield summarize prompts individually (they need separate processing)
+        for (const message of summarizeRequests) {
+          const summaryPrompt = buildSummaryPrompt({
+            id: session.sessionDbId,
+            memory_session_id: session.memorySessionId,
+            project: session.project,
+            user_prompt: session.userPrompt,
+            last_assistant_message: message.last_assistant_message || ''
+          }, mode);
+
+          session.conversationHistory.push({ role: 'user', content: summaryPrompt });
+
+          yield {
+            type: 'user',
+            message: {
+              role: 'user',
+              content: summaryPrompt
+            },
+            session_id: session.contentSessionId,
+            parent_tool_use_id: null,
+            isSynthetic: true
+          };
+        }
+      }
+    } else {
+      // IMMEDIATE MODE: Consume individual messages (original behavior)
+      for await (const message of this.sessionManager.getMessageIterator(session.sessionDbId)) {
+        if (message.cwd) {
+          cwdTracker.lastCwd = message.cwd;
+        }
+
+        if (message.type === 'observation') {
+          if (message.prompt_number !== undefined) {
+            session.lastPromptNumber = message.prompt_number;
+          }
+
+          const obsPrompt = buildObservationPrompt({
+            id: 0,
+            tool_name: message.tool_name!,
+            tool_input: JSON.stringify(message.tool_input),
+            tool_output: JSON.stringify(message.tool_response),
+            created_at_epoch: Date.now(),
+            cwd: message.cwd
+          });
+
+          session.conversationHistory.push({ role: 'user', content: obsPrompt });
+
+          yield {
+            type: 'user',
+            message: {
+              role: 'user',
+              content: obsPrompt
+            },
+            session_id: session.contentSessionId,
+            parent_tool_use_id: null,
+            isSynthetic: true
+          };
+        } else if (message.type === 'summarize') {
+          const summaryPrompt = buildSummaryPrompt({
+            id: session.sessionDbId,
+            memory_session_id: session.memorySessionId,
+            project: session.project,
+            user_prompt: session.userPrompt,
+            last_assistant_message: message.last_assistant_message || ''
+          }, mode);
+
+          session.conversationHistory.push({ role: 'user', content: summaryPrompt });
+
+          yield {
+            type: 'user',
+            message: {
+              role: 'user',
+              content: summaryPrompt
+            },
+            session_id: session.contentSessionId,
+            parent_tool_use_id: null,
+            isSynthetic: true
+          };
+        }
       }
     }
   }
@@ -395,5 +471,71 @@ export class SDKAgent {
     const settingsPath = path.join(homedir(), '.claude-mem', 'settings.json');
     const settings = SettingsDefaultsManager.loadFromFile(settingsPath);
     return settings.CLAUDE_MEM_MODEL;
+  }
+
+  /**
+   * Kill orphan subprocesses matching a session's memorySessionId
+   * This is needed because AbortController.abort() doesn't reliably kill the subprocess
+   * on some Linux environments. Manual cleanup ensures no zombie processes accumulate.
+   *
+   * @param memorySessionId The session ID used in --resume flag
+   * @returns Number of processes killed
+   */
+  killOrphanSubprocesses(memorySessionId: string): number {
+    if (!memorySessionId) {
+      return 0;
+    }
+
+    try {
+      // Find PIDs matching --resume <memorySessionId>
+      // Use pgrep for portable process matching
+      const pgrepResult = spawnSync('pgrep', ['-f', `--resume ${memorySessionId}`], {
+        encoding: 'utf8',
+        windowsHide: true
+      });
+
+      if (pgrepResult.status !== 0 || !pgrepResult.stdout?.trim()) {
+        // No matching processes found
+        return 0;
+      }
+
+      const pids = pgrepResult.stdout.trim().split('\n').filter(Boolean);
+      let killedCount = 0;
+
+      for (const pid of pids) {
+        try {
+          // SIGTERM first (graceful)
+          process.kill(parseInt(pid, 10), 'SIGTERM');
+          killedCount++;
+          logger.info('SDK', `SUBPROCESS_KILLED | pid=${pid} | memorySessionId=${memorySessionId}`, {
+            pid,
+            memorySessionId,
+            signal: 'SIGTERM'
+          });
+        } catch (killError: any) {
+          // Process may have already exited
+          if (killError.code !== 'ESRCH') {
+            logger.warn('SDK', `Failed to kill subprocess ${pid}`, {
+              pid,
+              memorySessionId,
+              error: killError.message
+            });
+          }
+        }
+      }
+
+      if (killedCount > 0) {
+        logger.info('SDK', `ORPHAN_CLEANUP | killed=${killedCount} | memorySessionId=${memorySessionId}`, {
+          memorySessionId,
+          killedCount,
+          pids: pids.join(',')
+        });
+      }
+
+      return killedCount;
+    } catch (error) {
+      logger.debug('SDK', 'Error during orphan subprocess cleanup', { memorySessionId }, error as Error);
+      return 0;
+    }
   }
 }
