@@ -12,9 +12,9 @@ import { homedir } from 'os';
 import { fileURLToPath } from 'url';
 
 // Dynamically resolve ROOT based on script location
-// Script is at plugin/scripts/smart-install.js, so ROOT is ../../
+// Script is at scripts/smart-install.js, so ROOT is one level up
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const ROOT = join(__dirname, '..', '..');
+const ROOT = join(__dirname, '..');
 const MARKER = join(ROOT, '.install-version');
 const IS_WINDOWS = process.platform === 'win32';
 
