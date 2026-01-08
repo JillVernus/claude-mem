@@ -22,7 +22,6 @@ datasets/
 src/ui/viewer.html
 
 # Local MCP server config (for development only)
-.mcp.json
 .cursor/
 .ace-tool/
 
@@ -32,3 +31,8 @@ src/ui/viewer.html
 # Prevent other malformed path directories (at root only)
 /http*/
 /https*/
+
+# Local development reports (not for distribution)
+docs/reports/log-level-audit.txt
+docs/reports/PLUGIN-REINSTALL-GUIDE.md
+docs/reports/SESSION-STATUS-*.md
