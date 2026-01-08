@@ -25,3 +25,10 @@ src/ui/viewer.html
 .mcp.json
 .cursor/
 .ace-tool/
+
+# Prevent literal tilde directories (path validation bug artifacts)
+~*/
+
+# Prevent other malformed path directories (at root only)
+/http*/
+/https*/
