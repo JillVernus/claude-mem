@@ -47,12 +47,17 @@ print_status "Destination: $DEST_DIR"
 # Show what would be synced (dry run first)
 if [ "$1" = "--dry-run" ] || [ "$1" = "-n" ]; then
     print_status "Dry run - showing what would be synced:"
-    rsync -av --delete --dry-run "$SOURCE_DIR" "$DEST_DIR"
+    find "$SOURCE_DIR" -type f | sed "s|$SOURCE_DIR|  |"
     exit 0
 fi
 
-# Perform the actual sync
-if rsync -av --delete "$SOURCE_DIR" "$DEST_DIR"; then
+# Perform the actual sync (clean copy)
+print_status "Cleaning destination..."
+rm -rf "$DEST_DIR"
+mkdir -p "$DEST_DIR"
+
+# Copy all files including hidden ones
+if cp -r "$SOURCE_DIR". "$DEST_DIR"; then
     print_status "✅ Plugin folder synced successfully!"
 else
     print_error "❌ Sync failed!"

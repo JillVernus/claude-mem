@@ -29,6 +29,13 @@ Claude-mem is a Claude Code plugin providing persistent memory across sessions. 
 npm run build-and-sync        # Build, sync to marketplace, restart worker
 ```
 
+## Version Locations
+
+Update all three files when releasing a new version:
+- `package.json` - root package version
+- `plugin/package.json` - built plugin package version
+- `plugin/.claude-plugin/plugin.json` - plugin metadata shown in Claude
+
 ## Configuration
 
 Settings are managed in `~/.claude-mem/settings.json`. The file is auto-created with defaults on first run.
@@ -37,7 +44,7 @@ Settings are managed in `~/.claude-mem/settings.json`. The file is auto-created 
 
 - **Source**: `<project-root>/src/`
 - **Built Plugin**: `<project-root>/plugin/`
-- **Installed Plugin**: `~/.claude/plugins/marketplaces/thedotmack/`
+- **Installed Plugin**: `~/.claude/plugins/marketplaces/jillvernus/`
 - **Database**: `~/.claude-mem/claude-mem.db`
 - **Chroma**: `~/.claude-mem/chroma/`
 
