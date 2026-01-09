@@ -36,3 +36,8 @@ src/ui/viewer.html
 docs/reports/log-level-audit.txt
 docs/reports/PLUGIN-REINSTALL-GUIDE.md
 docs/reports/SESSION-STATUS-*.md
+
+# Auto-generated folder CLAUDE.md files (claude-mem context injection)
+**/CLAUDE.md
+!/CLAUDE.md
+!/.claude/CLAUDE.md
