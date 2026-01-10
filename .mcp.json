@@ -1,9 +1,3 @@
 {
-  "mcpServers": {
-    "mcp-search": {
-      "type": "stdio",
-      "command": "node",
-      "args": ["./plugin/scripts/mcp-server.cjs"]
-    }
-  }
+  "mcpServers": {}
 }

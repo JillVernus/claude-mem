@@ -23,6 +23,11 @@ Use this as a guide when merging upstream releases to preserve these customizati
 | A: Dynamic Path Resolution | ✅ Done | Already in source, uses `getPackageRoot()` |
 | D: MCP Schema Enhancement | ✅ Done | Already in source (lines 193-224), `.cjs` conflict resolved |
 | E: Empty Search Params Fix | ✅ Done | Already in source (SearchManager.ts:143-170, SessionSearch.ts:589-615) |
+
+> **⚠️ Category E Fix (2026-01-10)**: MCP schema uses `_: true` as a required dummy param.
+> Must exclude `'_'` from `hasFilters` check in SearchManager.ts:145, otherwise empty MCP
+> searches fail with "query or filters required" error. Fixed in commit `52e0a5b5`.
+
 | B: Observation Batching | ✅ Done | Already in source (5 files verified) |
 | C: Zombie Process Cleanup | ✅ Done | Already in source (SDKAgent.ts:495, SessionManager.ts:25, worker-service.ts:158) |
 | F: Autonomous Execution Prevention | ✅ Done | Migrated to session-init.ts (lines 12-32, 88-105), disallowedTools extended |
@@ -32,6 +37,11 @@ Use this as a guide when merging upstream releases to preserve these customizati
 > verification before confirming Category F is essential. (2026-01-10)
 
 **Remaining Conflicts**: None - all resolved
+
+> **📝 Release Note**: When pushing fixes after initial merge, you MUST bump the version
+> (e.g., `9.0.2-jv.1` → `9.0.2-jv.2`), otherwise the marketplace will not update.
+> Update version in: `package.json`, `plugin/package.json`, `plugin/.claude-plugin/plugin.json`,
+> `.claude-plugin/marketplace.json`.
 
 ---
 
