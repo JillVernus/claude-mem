@@ -142,7 +142,7 @@ export class SearchManager {
 
       // Check if we have any filters - if not, return recent results
       const hasFilters = Object.keys(options).some(k =>
-        !['limit', 'offset', 'orderBy', 'format'].includes(k) && options[k] !== undefined
+        !['limit', 'offset', 'orderBy', 'format', '_'].includes(k) && options[k] !== undefined
       ) || obs_type || concepts || files;
 
       if (!hasFilters) {
