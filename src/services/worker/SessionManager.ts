@@ -25,7 +25,7 @@ export class SessionManager {
   private onKillOrphanSubprocesses?: (memorySessionId: string) => number;
   private pendingStore: PendingMessageStore | null = null;
   // Batching: idle timers per session (cleaned up on session delete)
-  private idleTimers: Map<number, ReturnType<typeof setTimeout>> = new Map();
+  private idleTimers: Map<number, ReturnType<typeof setTimeout>> = new Map(); // Keep for clearIdleTimer compatibility
 
   constructor(dbManager: DatabaseManager) {
     this.dbManager = dbManager;
@@ -222,8 +222,7 @@ export class SessionManager {
       const batchingEnabled = settings.CLAUDE_MEM_BATCHING_ENABLED === 'true';
 
       if (batchingEnabled) {
-        // Batched mode: start/reset idle timer, check overflow
-        const idleTimeout = parseInt(settings.CLAUDE_MEM_BATCH_IDLE_TIMEOUT, 10) || 15000;
+        // Batched mode: check for overflow, otherwise wait for turn-end flush
         const maxBatchSize = parseInt(settings.CLAUDE_MEM_BATCH_MAX_SIZE, 10) || 20;
 
         // Check for overflow (immediate flush if queue too large)
@@ -232,10 +231,8 @@ export class SessionManager {
             sessionId: sessionDbId
           });
           this.flushBatch(sessionDbId);
-        } else {
-          // Reset idle timer
-          this.resetIdleTimer(sessionDbId, idleTimeout);
         }
+        // No idle timer - batches are flushed at turn boundaries (summarize/init hooks)
       } else {
         // Immediate mode (current behavior): notify generator right away
         const emitter = this.sessionQueues.get(sessionDbId);
@@ -338,28 +335,12 @@ export class SessionManager {
   }
 
   // =====================================================
-  // BATCHING: Idle Timer & Flush Logic
+  // BATCHING: Flush Logic
   // =====================================================
 
   /**
-   * Reset (or start) the idle timer for a session.
-   * When the timer fires, it triggers a batch flush.
-   */
-  private resetIdleTimer(sessionDbId: number, timeoutMs: number): void {
-    this.clearIdleTimer(sessionDbId);
-
-    const timer = setTimeout(() => {
-      logger.info('BATCH', `IDLE_TIMEOUT | sessionDbId=${sessionDbId} | timeout=${timeoutMs}ms`, {
-        sessionId: sessionDbId
-      });
-      this.flushBatch(sessionDbId);
-    }, timeoutMs);
-
-    this.idleTimers.set(sessionDbId, timer);
-  }
-
-  /**
-   * Clear the idle timer for a session (e.g., on flush or delete)
+   * Clear any idle timer for a session (e.g., on flush or delete)
+   * Kept for backwards compatibility during cleanup
    */
   private clearIdleTimer(sessionDbId: number): void {
     const timer = this.idleTimers.get(sessionDbId);
@@ -371,7 +352,7 @@ export class SessionManager {
 
   /**
    * Flush the batch: emit 'message' to wake up the SDK agent.
-   * Called on: idle timeout, turn end (UserPromptSubmit), overflow, or session end.
+   * Called on: turn end (summarize hook), turn start (init hook), or overflow.
    */
   flushBatch(sessionDbId: number): void {
     this.clearIdleTimer(sessionDbId);

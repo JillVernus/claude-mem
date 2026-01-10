@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__plugin_claude-mem_mcp-search__search",
+      "mcp__plugin_claude-mem_mcp-search__get_observations",
+      "Bash(pkill:*)",
+      "Bash(npm run worker:restart)",
+      "mcp__plugin_claude-mem_mcp-search__timeline",
+      "Bash(pgrep:*)",
+      "Bash(node:*)",
+      "Bash(npm run build:*)",
+      "Bash(timeout:*)",
+      "Bash(echo:*)",
+      "Bash(git fetch:*)",
+      "mcp__mcp-search__search",
+      "WebFetch(domain:www.npmjs.com)",
+      "Bash(ps:*)",
+      "Skill(collaborating-with-codex)"
+    ]
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "mcp-search"
+  ]
+}

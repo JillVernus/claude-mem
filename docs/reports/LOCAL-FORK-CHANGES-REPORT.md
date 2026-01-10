@@ -3,7 +3,7 @@
 This document is a step-by-step guide for merging upstream releases into the JillVernus fork.
 Categories are ordered by severity (critical fixes first).
 
-**Current Fork Version**: `9.0.2-jv.2`
+**Current Fork Version**: `9.0.2-jv.3`
 **Upstream Base**: `v9.0.2` (commit `b9877897`)
 **Last Merge**: 2026-01-10
 
@@ -245,18 +245,31 @@ grep -A15 "name: 'search'" src/servers/mcp-server.ts
 
 **Problem**: Each observation triggers separate API call, expensive at scale.
 
-**Solution**: Batch multiple observations into single prompts (configurable).
+**Solution**: Batch multiple observations into single prompts, flushed at turn boundaries.
 
 **Files**:
 | File | Change |
 |------|--------|
-| `src/shared/SettingsDefaultsManager.ts:54-56,102-104` | Batching config options |
-| `src/sdk/prompts.ts:127` | `buildBatchObservationPrompt()` |
+| `src/shared/SettingsDefaultsManager.ts` | `CLAUDE_MEM_BATCHING_ENABLED`, `CLAUDE_MEM_BATCH_MAX_SIZE` |
+| `src/sdk/prompts.ts` | `buildBatchObservationPrompt()` |
 | `src/services/queue/SessionQueueProcessor.ts` | `createBatchIterator()` |
-| `src/services/worker/SessionManager.ts:28,376,488` | Batch timers and iterator |
+| `src/services/worker/SessionManager.ts` | Batch flush logic (turn-end triggered) |
 | `src/services/worker/SDKAgent.ts` | Batch mode in message generator |
 
-**Note**: Disabled by default (`CLAUDE_MEM_BATCHING_ENABLED: 'false'`).
+**Configuration** (`~/.claude-mem/settings.json`):
+```json
+{
+  "CLAUDE_MEM_BATCHING_ENABLED": "true",
+  "CLAUDE_MEM_BATCH_MAX_SIZE": "3"
+}
+```
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `CLAUDE_MEM_BATCHING_ENABLED` | `"false"` | Enable batched observation processing |
+| `CLAUDE_MEM_BATCH_MAX_SIZE` | `"20"` | Max observations before overflow flush |
+
+**Note**: Batches are flushed at turn boundaries (summarize/init hooks) or on overflow. No idle timeout.
 
 ---
 
