@@ -37,21 +37,43 @@ This fork addresses specific stability and usability issues encountered in our e
 
 ## Observation Batching Configuration
 
+### How It Works
+
+Claude-mem uses a separate "SDK agent" (another Claude session) to compress your tool usage into semantic observations. By default, each tool triggers an immediate API call. **Batching** collects multiple tool observations and processes them in a single API call at turn end.
+
+```
+Without Batching:              With Batching:
+Tool 1 → API call #1           Tool 1 → queued
+Tool 2 → API call #2           Tool 2 → queued
+Tool 3 → API call #3           Tool 3 → queued
+Summary → API call #4          Turn end → API call #1 (all 3)
+                                        → API call #2 (summary)
+= 4 API calls                  = 2 API calls
+```
+
+### Configuration
+
 Enable batching in `~/.claude-mem/settings.json`:
 
 ```json
 {
   "CLAUDE_MEM_BATCHING_ENABLED": "true",
-  "CLAUDE_MEM_BATCH_MAX_SIZE": "3"
+  "CLAUDE_MEM_BATCH_MAX_SIZE": "20"
 }
 ```
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `CLAUDE_MEM_BATCHING_ENABLED` | `"false"` | Enable/disable observation batching. When enabled, multiple observations are combined into a single API call at turn boundaries. |
-| `CLAUDE_MEM_BATCH_MAX_SIZE` | `"20"` | Maximum observations per batch. When reached, batch is flushed immediately (overflow protection). |
+| `CLAUDE_MEM_BATCHING_ENABLED` | `"false"` | Enable observation batching. Reduces API calls by processing multiple observations together. |
+| `CLAUDE_MEM_BATCH_MAX_SIZE` | `"20"` | Overflow protection. If a turn has more tools than this, flush early. Set high (50-100) for best savings. |
 
-Batches are automatically flushed at turn boundaries (when summarize or init hooks fire). No idle timeout is used.
+### When Batches Flush
+
+- **Turn end** - Normal: all queued observations processed together
+- **Overflow** - Queue reaches MAX_SIZE → immediate flush
+- **Next turn** - Any leftovers from previous turn
+
+For detailed architecture, see [docs/architecture/2026-01-10-BATCHING-AND-SDK-THEORY.md](docs/architecture/2026-01-10-BATCHING-AND-SDK-THEORY.md).
 
 ---
 
