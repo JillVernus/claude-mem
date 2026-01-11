@@ -90,7 +90,7 @@ For detailed architecture, see [docs/architecture/2026-01-10-BATCHING-AND-SDK-TH
 ## Version Format
 
 Fork versions follow the format `{upstream}-jv.{patch}`:
-- `9.0.3-jv.1` = Based on upstream v9.0.3, fork patch version 1
+- `9.0.4-jv.1` = Based on upstream v9.0.4, fork patch version 1
 
 ---
 
