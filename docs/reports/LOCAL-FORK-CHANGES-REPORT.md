@@ -3,7 +3,7 @@
 This document is a step-by-step guide for merging upstream releases into the JillVernus fork.
 Categories are ordered by severity (critical fixes first).
 
-**Current Fork Version**: `9.0.5-jv.6`
+**Current Fork Version**: `9.0.5-jv.7`
 **Upstream Base**: `v9.0.5` (commit `3d40b45f`)
 **Last Merge**: 2026-01-14
 **Recent Updates**:
@@ -11,6 +11,7 @@ Categories are ordered by severity (critical fixes first).
 - `9.0.5-jv.3`: Fixed hardcoded marketplace paths in worker-cli.js and TypeScript files
 - `9.0.5-jv.4`: Fixed smart-install.js to use worker-cli.js instead of worker-service.cjs
 - `9.0.5-jv.6`: Fixed smart-install.js to update existing aliases on plugin upgrade
+- `9.0.5-jv.7`: Fixed useSettings.ts missing base URL fields (CLAUDE_MEM_GEMINI_BASE_URL, CLAUDE_MEM_OPENROUTER_BASE_URL)
 
 ---
 

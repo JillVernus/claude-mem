@@ -7,6 +7,8 @@
 
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
+| #160 | 4:06 AM | 🔵 | Gemini Agent Base URL Resolution and API Call Construction Detailed | ~401 |
+| #155 | 4:05 AM | 🔵 | Gemini Agent Model Validation and Fallback Logic Discovered | ~401 |
 | #60 | 2:38 AM | 🔵 | Identified hardcoded "thedotmack" path in `BranchManager.ts` | ~336 |
 | #59 | " | 🔴 | Updated default OpenRouter `HTTP-Referer` for `jillvernus` fork | ~301 |
 | #58 | " | 🔵 | Confirmed hardcoded "thedotmack" default in `OpenRouterAgent.ts` HTTP-Referer | ~317 |
