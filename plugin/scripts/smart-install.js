@@ -261,7 +261,7 @@ function installUv() {
  * Add shell alias for claude-mem command
  */
 function installCLI() {
-  const WORKER_CLI = join(ROOT, 'plugin', 'scripts', 'worker-cli.js');
+  const WORKER_CLI = join(__dirname, 'worker-cli.js');
   const bunPath = getBunPath() || 'bun';
   const aliasLine = `alias claude-mem='${bunPath} "${WORKER_CLI}"'`;
   const markerPath = join(ROOT, '.cli-installed');
