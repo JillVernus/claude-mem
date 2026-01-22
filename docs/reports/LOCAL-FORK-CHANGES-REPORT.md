@@ -3,10 +3,13 @@
 This document is a step-by-step guide for merging upstream releases into the JillVernus fork.
 Categories are ordered by severity (critical fixes first).
 
-**Current Fork Version**: `9.0.5-jv.1`
+**Current Fork Version**: `9.0.5-jv.4`
 **Upstream Base**: `v9.0.5` (commit `3d40b45f`)
 **Last Merge**: 2026-01-14
-**Next Version**: `9.0.5-jv.2` (Custom API Endpoints feature)
+**Recent Updates**:
+- `9.0.5-jv.2`: Custom API Endpoints feature
+- `9.0.5-jv.3`: Fixed hardcoded marketplace paths
+- `9.0.5-jv.4`: Fixed smart-install.js CLI alias
 
 ---
 
@@ -34,6 +37,12 @@ Categories are ordered by severity (critical fixes first).
 | `src/services/worker-service.ts` | + | | | | | | | |
 | `src/shared/worker-utils.ts` | | + | | | | | | |
 | `src/services/infrastructure/HealthMonitor.ts` | | + | | | | | | |
+| `plugin/scripts/worker-cli.js` | | + | | | | | | |
+| `plugin/scripts/smart-install.js` | | + | | | | | | |
+| `src/services/worker/BranchManager.ts` | | + | | | | | | |
+| `src/services/integrations/CursorHooksInstaller.ts` | | + | | | | | | |
+| `src/services/context/ContextBuilder.ts` | | + | | | | | | |
+| `src/services/sync/ChromaSync.ts` | | + | | | | | | |
 | `src/services/worker/SearchManager.ts` | | | + | | | | | |
 | `src/services/sqlite/SessionSearch.ts` | | | + | | | | | |
 | `src/servers/mcp-server.ts` | | | | + | | | | |
@@ -239,18 +248,32 @@ ps aux | grep 'claude.*resume' | grep -v grep
 
 **Problem**: Upstream hardcodes `thedotmack` marketplace path, crashes on other installations.
 
-**Solution**: Use `getPackageRoot()` from `paths.ts` for dynamic resolution.
+**Solution**: Use `getPackageRoot()` from `paths.ts` for dynamic resolution, and replace all hardcoded references.
 
 **Files**:
 | File | Change |
 |------|--------|
 | `src/shared/worker-utils.ts` | Import and use `getPackageRoot()` |
 | `src/services/infrastructure/HealthMonitor.ts` | Import and use `getPackageRoot()` |
+| `plugin/scripts/worker-cli.js` | Replace hardcoded "thedotmack" with "jillvernus" (2 locations) |
+| `plugin/scripts/smart-install.js:264` | Fix CLI alias to use `worker-cli.js` instead of `worker-service.cjs` |
+| `src/services/worker/BranchManager.ts:14` | Replace hardcoded path with "jillvernus" |
+| `src/services/integrations/CursorHooksInstaller.ts` | Replace hardcoded paths (6 locations) |
+| `src/services/context/ContextBuilder.ts` | Replace hardcoded path |
+| `src/services/sync/ChromaSync.ts:105` | Replace hardcoded GitHub URL |
+
+**Critical Notes**:
+- `worker-cli.js` is a standalone minified file (not built from TypeScript)
+- `smart-install.js` creates shell aliases during plugin installation
+- The alias MUST point to `worker-cli.js` (CLI tool), not `worker-service.cjs` (daemon)
 
 **Verification**:
 ```bash
-# Should find NO hardcoded thedotmack paths
-grep -r 'thedotmack' src/shared/ src/services/infrastructure/
+# Should find NO hardcoded thedotmack paths in source
+grep -r 'thedotmack' src/ plugin/scripts/
+
+# Test CLI alias after installation
+claude-mem restart  # Should work without "Module not found" error
 ```
 
 ---
