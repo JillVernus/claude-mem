@@ -3,14 +3,14 @@
 This document is a step-by-step guide for merging upstream releases into the JillVernus fork.
 Categories are ordered by severity (critical fixes first).
 
-**Current Fork Version**: `9.0.5-jv.5`
+**Current Fork Version**: `9.0.5-jv.6`
 **Upstream Base**: `v9.0.5` (commit `3d40b45f`)
 **Last Merge**: 2026-01-14
 **Recent Updates**:
 - `9.0.5-jv.2`: Custom API Endpoints feature
 - `9.0.5-jv.3`: Fixed hardcoded marketplace paths in worker-cli.js and TypeScript files
 - `9.0.5-jv.4`: Fixed smart-install.js to use worker-cli.js instead of worker-service.cjs
-- `9.0.5-jv.5`: Fixed smart-install.js to update existing aliases on plugin upgrade
+- `9.0.5-jv.6`: Fixed smart-install.js to update existing aliases on plugin upgrade
 
 ---
 
@@ -257,7 +257,7 @@ ps aux | grep 'claude.*resume' | grep -v grep
 | `src/shared/worker-utils.ts` | Import and use `getPackageRoot()` |
 | `src/services/infrastructure/HealthMonitor.ts` | Import and use `getPackageRoot()` |
 | `plugin/scripts/worker-cli.js` | Replace hardcoded "thedotmack" with "jillvernus" (2 locations) |
-| `plugin/scripts/smart-install.js:264` | Fix CLI alias to use `worker-cli.js` instead of `worker-service.cjs` |
+| `plugin/scripts/smart-install.js:264` | Use `join(__dirname, 'worker-cli.js')` instead of `join(ROOT, 'plugin', 'scripts', 'worker-cli.js')` |
 | `plugin/scripts/smart-install.js:296-312` | Update alias replacement logic to UPDATE existing aliases on upgrade |
 | `src/services/worker/BranchManager.ts:14` | Replace hardcoded path with "jillvernus" |
 | `src/services/integrations/CursorHooksInstaller.ts` | Replace hardcoded paths (6 locations) |
@@ -271,6 +271,9 @@ ps aux | grep 'claude.*resume' | grep -v grep
 - **v9.0.5-jv.5**: Removed marker file check and added regex-based alias UPDATE logic
   - Previously: skipped if alias existed, leaving old version paths
   - Now: uses regex to find and replace existing aliases on every install/upgrade
+- **v9.0.5-jv.6**: Fixed path resolution - worker-cli.js is in `/scripts/`, NOT `/plugin/scripts/`
+  - smart-install.js runs from `/scripts/`, so `__dirname` already points to correct location
+  - Installed structure: `/scripts/worker-cli.js` exists, `/plugin/scripts/worker-cli.js` is empty
 
 **Verification**:
 ```bash
