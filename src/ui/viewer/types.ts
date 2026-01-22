@@ -70,6 +70,10 @@ export interface Settings {
   CLAUDE_MEM_OPENROUTER_SITE_URL?: string;
   CLAUDE_MEM_OPENROUTER_APP_NAME?: string;
 
+  // Custom API Endpoints
+  CLAUDE_MEM_GEMINI_BASE_URL?: string;
+  CLAUDE_MEM_OPENROUTER_BASE_URL?: string;
+
   // Token Economics Display
   CLAUDE_MEM_CONTEXT_SHOW_READ_TOKENS?: string;
   CLAUDE_MEM_CONTEXT_SHOW_WORK_TOKENS?: string;

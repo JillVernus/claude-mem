@@ -477,6 +477,17 @@ export function ContextSettingsModal({
                       onChange={(checked) => updateSetting('CLAUDE_MEM_GEMINI_RATE_LIMITING_ENABLED', checked ? 'true' : 'false')}
                     />
                   </div>
+                  <FormField
+                    label="Custom Base URL (Optional)"
+                    tooltip="Override the default Gemini models base URL. Leave empty to use default. Example: https://your-proxy.com/v1beta/models (model name will be appended automatically)"
+                  >
+                    <input
+                      type="text"
+                      value={formState.CLAUDE_MEM_GEMINI_BASE_URL || ''}
+                      onChange={(e) => updateSetting('CLAUDE_MEM_GEMINI_BASE_URL', e.target.value)}
+                      placeholder="https://generativelanguage.googleapis.com/v1beta/models"
+                    />
+                  </FormField>
                 </>
               )}
 
@@ -524,6 +535,17 @@ export function ContextSettingsModal({
                       value={formState.CLAUDE_MEM_OPENROUTER_APP_NAME || 'claude-mem'}
                       onChange={(e) => updateSetting('CLAUDE_MEM_OPENROUTER_APP_NAME', e.target.value)}
                       placeholder="claude-mem"
+                    />
+                  </FormField>
+                  <FormField
+                    label="Custom Endpoint URL (Optional)"
+                    tooltip="Override the default OpenRouter endpoint. Must be the full chat completions URL. Leave empty to use default. Example: https://your-proxy.com/api/v1/chat/completions"
+                  >
+                    <input
+                      type="text"
+                      value={formState.CLAUDE_MEM_OPENROUTER_BASE_URL || ''}
+                      onChange={(e) => updateSetting('CLAUDE_MEM_OPENROUTER_BASE_URL', e.target.value)}
+                      placeholder="https://openrouter.ai/api/v1/chat/completions"
                     />
                   </FormField>
                 </>

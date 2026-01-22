@@ -6,6 +6,7 @@ Categories are ordered by severity (critical fixes first).
 **Current Fork Version**: `9.0.5-jv.1`
 **Upstream Base**: `v9.0.5` (commit `3d40b45f`)
 **Last Merge**: 2026-01-14
+**Next Version**: `9.0.5-jv.2` (Custom API Endpoints feature)
 
 ---
 
@@ -19,30 +20,38 @@ Categories are ordered by severity (critical fixes first).
 | 2 | A: Dynamic Path Resolution | Crash fix - hardcoded `thedotmack` paths | 2 | Active |
 | 3 | E: Empty Search Params Fix | MCP usability - empty search returns results | 2 | Active |
 | 4 | D: MCP Schema Enhancement | MCP usability - visible tool parameters | 1 | Active |
-| 5 | B: Observation Batching | Cost reduction - batch API calls | 5 | ⏸️ ON HOLD |
-| 6 | F: Autonomous Execution Prevention | Safety - block SDK autonomous behavior | 3 | ⏸️ ON HOLD |
-| 7 | G: Fork Configuration | Identity - version and marketplace config | 4 | Active |
+| 5 | H: Custom API Endpoints | Feature - configurable Gemini/OpenRouter endpoints | 8 | Active |
+| 6 | B: Observation Batching | Cost reduction - batch API calls | 5 | ⏸️ ON HOLD |
+| 7 | F: Autonomous Execution Prevention | Safety - block SDK autonomous behavior | 3 | ⏸️ ON HOLD |
+| 8 | G: Fork Configuration | Identity - version and marketplace config | 4 | Active |
 
 ### Files by Category
 
-| File | C | A | E | D | B | F | G |
-|------|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
-| `src/services/worker/SDKAgent.ts` | + | | | | + | + | |
-| `src/services/worker/SessionManager.ts` | + | | | | + | | |
-| `src/services/worker-service.ts` | + | | | | | | |
-| `src/shared/worker-utils.ts` | | + | | | | | |
-| `src/services/infrastructure/HealthMonitor.ts` | | + | | | | | |
-| `src/services/worker/SearchManager.ts` | | | + | | | | |
-| `src/services/sqlite/SessionSearch.ts` | | | + | | | | |
-| `src/servers/mcp-server.ts` | | | | + | | | |
-| `src/shared/SettingsDefaultsManager.ts` | | | | | + | + | |
-| `src/sdk/prompts.ts` | | | | | + | | |
-| `src/services/queue/SessionQueueProcessor.ts` | | | | | + | | |
-| `src/cli/handlers/session-init.ts` | | | | | | + | |
-| `package.json` | | | | | | | + |
-| `plugin/package.json` | | | | | | | + |
-| `plugin/.claude-plugin/plugin.json` | | | | | | | + |
-| `.claude-plugin/marketplace.json` | | | | | | | + |
+| File | C | A | E | D | H | B | F | G |
+|------|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+| `src/services/worker/SDKAgent.ts` | + | | | | | + | + | |
+| `src/services/worker/SessionManager.ts` | + | | | | | + | | |
+| `src/services/worker-service.ts` | + | | | | | | | |
+| `src/shared/worker-utils.ts` | | + | | | | | | |
+| `src/services/infrastructure/HealthMonitor.ts` | | + | | | | | | |
+| `src/services/worker/SearchManager.ts` | | | + | | | | | |
+| `src/services/sqlite/SessionSearch.ts` | | | + | | | | | |
+| `src/servers/mcp-server.ts` | | | | + | | | | |
+| `src/shared/SettingsDefaultsManager.ts` | | | | | + | + | + | |
+| `src/services/worker/GeminiAgent.ts` | | | | | + | | | |
+| `src/services/worker/OpenRouterAgent.ts` | | | | | + | | | |
+| `src/services/worker/http/routes/SettingsRoutes.ts` | | | | | + | | | |
+| `src/services/worker/http/middleware.ts` | | | | | + | | | |
+| `src/ui/viewer/types.ts` | | | | | + | | | |
+| `src/ui/viewer/constants/settings.ts` | | | | | + | | | |
+| `src/ui/viewer/components/ContextSettingsModal.tsx` | | | | | + | | | |
+| `src/sdk/prompts.ts` | | | | | | + | | |
+| `src/services/queue/SessionQueueProcessor.ts` | | | | | | + | | |
+| `src/cli/handlers/session-init.ts` | | | | | | | + | |
+| `package.json` | | | | | | | | + |
+| `plugin/package.json` | | | | | | | | + |
+| `plugin/.claude-plugin/plugin.json` | | | | | | | | + |
+| `.claude-plugin/marketplace.json` | | | | | | | | + |
 
 ---
 
@@ -142,6 +151,15 @@ Expected: Both should have matches.
 grep -A5 "name: 'search'" src/servers/mcp-server.ts | grep -E 'query|limit|project'
 ```
 Expected: Should show explicit property definitions, NOT empty `properties: {}`.
+
+#### Category H: Custom API Endpoints
+```bash
+grep -n 'CLAUDE_MEM_GEMINI_BASE_URL\|CLAUDE_MEM_OPENROUTER_BASE_URL' src/shared/SettingsDefaultsManager.ts
+grep -n 'getGeminiBaseUrl' src/services/worker/GeminiAgent.ts
+grep -n 'getOpenRouterBaseUrl' src/services/worker/OpenRouterAgent.ts
+grep -n 'requireLocalhost' src/services/worker/http/routes/SettingsRoutes.ts | head -5
+```
+Expected: All 4 should have matches showing custom endpoint implementation.
 
 #### Category B: Observation Batching
 ```bash
@@ -273,7 +291,80 @@ grep -A15 "name: 'search'" src/servers/mcp-server.ts
 
 ---
 
-### Category B: Observation Batching (Priority 5) ⏸️ ON HOLD
+### Category H: Custom API Endpoints (Priority 5)
+
+**Problem**: Users cannot configure custom API endpoints for Gemini/OpenRouter (proxies, self-hosted gateways, regional endpoints).
+
+**Solution**: Add configurable base URL settings with validation, security controls, and UI support.
+
+**Files**:
+| File | Change |
+|------|--------|
+| `src/shared/SettingsDefaultsManager.ts` | Add `CLAUDE_MEM_GEMINI_BASE_URL` and `CLAUDE_MEM_OPENROUTER_BASE_URL` settings |
+| `src/services/worker/GeminiAgent.ts` | `getGeminiBaseUrl()` method with priority: settings > env > default, trailing slash handling |
+| `src/services/worker/OpenRouterAgent.ts` | `getOpenRouterBaseUrl()` method with priority: settings > env > default |
+| `src/services/worker/http/routes/SettingsRoutes.ts` | URL validation (whitespace, credentials, protocol), localhost protection, USER_SETTINGS_PATH consistency |
+| `src/services/worker/http/middleware.ts` | CORS restricted to localhost origins only (prevents CSRF attacks) |
+| `src/ui/viewer/types.ts` | Add settings to Settings interface |
+| `src/ui/viewer/constants/settings.ts` | Add default values (empty strings) |
+| `src/ui/viewer/components/ContextSettingsModal.tsx` | UI fields with provider-specific labels and tooltips |
+
+**Configuration** (`~/.claude-mem/settings.json`):
+```json
+{
+  "CLAUDE_MEM_GEMINI_BASE_URL": "https://my-proxy.com/v1beta/models",
+  "CLAUDE_MEM_OPENROUTER_BASE_URL": "https://my-gateway.com/api/v1/chat/completions"
+}
+```
+
+Or via environment variables:
+```bash
+export GEMINI_BASE_URL="https://my-proxy.com/v1beta/models"
+export OPENROUTER_BASE_URL="https://my-gateway.com/api/v1/chat/completions"
+```
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `CLAUDE_MEM_GEMINI_BASE_URL` | — | Custom Gemini models base URL (model name appended automatically) |
+| `CLAUDE_MEM_OPENROUTER_BASE_URL` | — | Custom OpenRouter endpoint URL (full chat completions URL) |
+
+**Security Features**:
+- Localhost-only access to GET/POST /api/settings (prevents API key exfiltration)
+- CORS restricted to localhost origins (prevents browser-based CSRF)
+- URL validation: rejects credentials in URLs, requires http/https protocol
+- Warning logged when http:// is used (insecure transmission)
+
+**URL Semantics**:
+- **Gemini**: Expects "models base" - model name is appended automatically
+  - Example: `https://proxy.com/v1beta/models` → `https://proxy.com/v1beta/models/gemini-2.5-flash:generateContent`
+- **OpenRouter**: Expects full endpoint URL - nothing is appended
+  - Example: `https://gateway.com/api/v1/chat/completions` (complete URL)
+
+**Verification**:
+```bash
+# Check settings schema
+grep -n 'CLAUDE_MEM_GEMINI_BASE_URL\|CLAUDE_MEM_OPENROUTER_BASE_URL' src/shared/SettingsDefaultsManager.ts
+
+# Check agent implementations
+grep -n 'getGeminiBaseUrl\|getOpenRouterBaseUrl' src/services/worker/GeminiAgent.ts src/services/worker/OpenRouterAgent.ts
+
+# Check security controls
+grep -n 'requireLocalhost' src/services/worker/http/routes/SettingsRoutes.ts
+grep -n 'localhostPatterns' src/services/worker/http/middleware.ts
+
+# Check UI implementation
+grep -n 'CLAUDE_MEM_GEMINI_BASE_URL\|CLAUDE_MEM_OPENROUTER_BASE_URL' src/ui/viewer/components/ContextSettingsModal.tsx
+```
+
+**Documentation**:
+- `docs/public/usage/gemini-provider.mdx` - Custom API Endpoints section
+- `docs/public/usage/openrouter-provider.mdx` - Custom API Endpoints section
+- `docs/public/configuration.mdx` - Settings reference updated
+- `docs/public/architecture/custom-api-endpoints.mdx` - Full implementation plan
+
+---
+
+### Category B: Observation Batching (Priority 6) ⏸️ ON HOLD
 
 > **Status**: This feature is on hold. The code exists but is not actively maintained during upstream merges.
 

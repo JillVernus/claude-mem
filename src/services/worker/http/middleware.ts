@@ -24,8 +24,31 @@ export function createMiddleware(
   // JSON parsing with 50mb limit
   middlewares.push(express.json({ limit: '50mb' }));
 
-  // CORS
-  middlewares.push(cors());
+  // CORS - restrict to localhost origins only to prevent CSRF attacks
+  middlewares.push(cors({
+    origin: (origin, callback) => {
+      // Allow requests with no origin (like mobile apps, curl, Postman)
+      if (!origin) {
+        return callback(null, true);
+      }
+
+      // Allow localhost origins only
+      const localhostPatterns = [
+        /^https?:\/\/localhost(:\d+)?$/,
+        /^https?:\/\/127\.0\.0\.1(:\d+)?$/,
+        /^https?:\/\/\[::1\](:\d+)?$/,
+        /^https?:\/\/\[::ffff:127\.0\.0\.1\](:\d+)?$/,
+      ];
+
+      const isLocalhost = localhostPatterns.some(pattern => pattern.test(origin));
+      if (isLocalhost) {
+        callback(null, true);
+      } else {
+        callback(new Error('CORS policy: Only localhost origins allowed'));
+      }
+    },
+    credentials: true
+  }));
 
   // HTTP request/response logging
   middlewares.push((req: Request, res: Response, next: NextFunction) => {

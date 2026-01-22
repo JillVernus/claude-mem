@@ -78,6 +78,7 @@ All free models support:
 | `CLAUDE_MEM_OPENROUTER_MAX_TOKENS` | number | `100000` | Token budget safety limit |
 | `CLAUDE_MEM_OPENROUTER_SITE_URL` | string | — | Optional: URL for analytics attribution |
 | `CLAUDE_MEM_OPENROUTER_APP_NAME` | string | `claude-mem` | Optional: App name for analytics |
+| `CLAUDE_MEM_OPENROUTER_BASE_URL` | string | — | Custom endpoint URL (optional, for proxies/self-hosted) |
 
 ### Using the Settings UI
 
@@ -108,6 +109,45 @@ export OPENROUTER_API_KEY="sk-or-v1-your-key-here"
 ```
 
 The settings file takes precedence over the environment variable.
+
+## Custom API Endpoints
+
+You can override the default OpenRouter API endpoint to use proxy servers, self-hosted gateways, or custom implementations.
+
+### Use Cases
+
+- **Proxy Servers**: Route API requests through a corporate proxy
+- **Self-Hosted Gateways**: Use custom API implementations
+- **Load Balancers**: Distribute requests across multiple endpoints
+- **Development/Testing**: Point to local mock servers
+
+### Configuration
+
+Edit `~/.claude-mem/settings.json`:
+
+```json
+{
+  "CLAUDE_MEM_OPENROUTER_BASE_URL": "https://my-gateway.example.com/api/v1/chat/completions"
+}
+```
+
+Or use environment variable:
+
+```bash
+export OPENROUTER_BASE_URL="https://my-gateway.example.com/api/v1/chat/completions"
+```
+
+### Important Notes
+
+- Leave empty to use the default endpoint (`https://openrouter.ai/api/v1/chat/completions`)
+- The URL must be the **full chat completions endpoint** - nothing will be appended
+- Example: `https://proxy.com/api/v1/chat/completions` (complete URL)
+- Custom URLs must use `http://` or `https://` protocol
+- Settings file takes precedence over environment variable
+
+<Warning>
+**Security**: Only use trusted endpoints. Custom endpoints can intercept your API keys. Avoid using `http://` (unencrypted) in production.
+</Warning>
 
 ## Model Selection Guide
 

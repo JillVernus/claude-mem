@@ -10,13 +10,12 @@
  * - Sync to database and Chroma
  */
 
-import path from 'path';
-import { homedir } from 'os';
 import { DatabaseManager } from './DatabaseManager.js';
 import { SessionManager } from './SessionManager.js';
 import { logger } from '../../utils/logger.js';
 import { buildInitPrompt, buildObservationPrompt, buildSummaryPrompt, buildContinuationPrompt } from '../../sdk/prompts.js';
 import { SettingsDefaultsManager } from '../../shared/SettingsDefaultsManager.js';
+import { USER_SETTINGS_PATH } from '../../shared/paths.js';
 import type { ActiveSession, ConversationMessage } from '../worker-types.js';
 import { ModeManager } from '../domain/ModeManager.js';
 import {
@@ -27,8 +26,8 @@ import {
   type FallbackAgent
 } from './agents/index.js';
 
-// Gemini API endpoint
-const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
+// Gemini API endpoint (default, can be overridden via settings)
+const DEFAULT_GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
 
 // Gemini model types (available via API)
 export type GeminiModel =
@@ -311,6 +310,22 @@ export class GeminiAgent {
   }
 
   /**
+   * Get Gemini base URL from settings or environment
+   * Strips trailing slash to prevent double-slash in URL concatenation
+   */
+  private getGeminiBaseUrl(): string {
+    const settings = SettingsDefaultsManager.loadFromFile(USER_SETTINGS_PATH);
+
+    // Priority: settings > env var > default
+    let baseUrl = settings.CLAUDE_MEM_GEMINI_BASE_URL
+      || (process.env.GEMINI_BASE_URL || '').trim()
+      || DEFAULT_GEMINI_API_URL;
+
+    // Strip trailing slash to prevent double-slash when concatenating
+    return baseUrl.replace(/\/$/, '');
+  }
+
+  /**
    * Query Gemini via REST API with full conversation history (multi-turn)
    * Sends the entire conversation context for coherent responses
    */
@@ -328,7 +343,8 @@ export class GeminiAgent {
       totalChars
     });
 
-    const url = `${GEMINI_API_URL}/${model}:generateContent?key=${apiKey}`;
+    const baseUrl = this.getGeminiBaseUrl();
+    const url = `${baseUrl}/${model}:generateContent?key=${apiKey}`;
 
     // Enforce RPM rate limit for free tier (skipped if rate limiting disabled)
     await enforceRateLimitForModel(model, rateLimitingEnabled);
@@ -369,8 +385,7 @@ export class GeminiAgent {
    * Get Gemini configuration from settings or environment
    */
   private getGeminiConfig(): { apiKey: string; model: GeminiModel; rateLimitingEnabled: boolean } {
-    const settingsPath = path.join(homedir(), '.claude-mem', 'settings.json');
-    const settings = SettingsDefaultsManager.loadFromFile(settingsPath);
+    const settings = SettingsDefaultsManager.loadFromFile(USER_SETTINGS_PATH);
 
     // API key: check settings first, then environment variable
     const apiKey = settings.CLAUDE_MEM_GEMINI_API_KEY || process.env.GEMINI_API_KEY || '';
@@ -409,8 +424,7 @@ export class GeminiAgent {
  * Check if Gemini is available (has API key configured)
  */
 export function isGeminiAvailable(): boolean {
-  const settingsPath = path.join(homedir(), '.claude-mem', 'settings.json');
-  const settings = SettingsDefaultsManager.loadFromFile(settingsPath);
+  const settings = SettingsDefaultsManager.loadFromFile(USER_SETTINGS_PATH);
   return !!(settings.CLAUDE_MEM_GEMINI_API_KEY || process.env.GEMINI_API_KEY);
 }
 
@@ -418,7 +432,6 @@ export function isGeminiAvailable(): boolean {
  * Check if Gemini is the selected provider
  */
 export function isGeminiSelected(): boolean {
-  const settingsPath = path.join(homedir(), '.claude-mem', 'settings.json');
-  const settings = SettingsDefaultsManager.loadFromFile(settingsPath);
+  const settings = SettingsDefaultsManager.loadFromFile(USER_SETTINGS_PATH);
   return settings.CLAUDE_MEM_PROVIDER === 'gemini';
 }

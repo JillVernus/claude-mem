@@ -27,8 +27,8 @@ import {
   type FallbackAgent
 } from './agents/index.js';
 
-// OpenRouter API endpoint
-const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
+// OpenRouter API endpoint (default, can be overridden via settings)
+const DEFAULT_OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
 // Context window management constants (defaults, overridable via settings)
 const DEFAULT_MAX_CONTEXT_MESSAGES = 20;  // Maximum messages to keep in conversation history
@@ -321,6 +321,18 @@ export class OpenRouterAgent {
   }
 
   /**
+   * Get OpenRouter base URL from settings or environment
+   */
+  private getOpenRouterBaseUrl(): string {
+    const settings = SettingsDefaultsManager.loadFromFile(USER_SETTINGS_PATH);
+
+    // Priority: settings > env var > default
+    return settings.CLAUDE_MEM_OPENROUTER_BASE_URL
+      || (process.env.OPENROUTER_BASE_URL || '').trim()
+      || DEFAULT_OPENROUTER_API_URL;
+  }
+
+  /**
    * Query OpenRouter via REST API with full conversation history (multi-turn)
    * Sends the entire conversation context for coherent responses
    */
@@ -343,7 +355,9 @@ export class OpenRouterAgent {
       estimatedTokens
     });
 
-    const response = await fetch(OPENROUTER_API_URL, {
+    const url = this.getOpenRouterBaseUrl();
+
+    const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${apiKey}`,

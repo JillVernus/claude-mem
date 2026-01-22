@@ -2,14 +2,14 @@
  * Settings Routes
  *
  * Handles settings management, MCP toggle, and branch switching.
- * Settings are stored in ~/.claude-mem/settings.json
+ * Settings are stored in USER_SETTINGS_PATH (respects CLAUDE_MEM_DATA_DIR)
  */
 
 import express, { Request, Response } from 'express';
 import path from 'path';
 import { readFileSync, writeFileSync, existsSync, renameSync, mkdirSync } from 'fs';
 import { homedir } from 'os';
-import { getPackageRoot } from '../../../../shared/paths.js';
+import { getPackageRoot, USER_SETTINGS_PATH } from '../../../../shared/paths.js';
 import { logger } from '../../../../utils/logger.js';
 import { SettingsManager } from '../../SettingsManager.js';
 import { getBranchInfo, switchBranch, pullUpdates } from '../../BranchManager.js';
@@ -17,6 +17,7 @@ import { ModeManager } from '../../domain/ModeManager.js';
 import { BaseRouteHandler } from '../BaseRouteHandler.js';
 import { SettingsDefaultsManager } from '../../../../shared/SettingsDefaultsManager.js';
 import { clearPortCache } from '../../../../shared/worker-utils.js';
+import { requireLocalhost } from '../middleware.js';
 
 export class SettingsRoutes extends BaseRouteHandler {
   constructor(
@@ -26,32 +27,31 @@ export class SettingsRoutes extends BaseRouteHandler {
   }
 
   setupRoutes(app: express.Application): void {
-    // Settings endpoints
-    app.get('/api/settings', this.handleGetSettings.bind(this));
-    app.post('/api/settings', this.handleUpdateSettings.bind(this));
+    // Settings endpoints (localhost-only to protect API keys)
+    app.get('/api/settings', requireLocalhost, this.handleGetSettings.bind(this));
+    app.post('/api/settings', requireLocalhost, this.handleUpdateSettings.bind(this));
 
     // MCP toggle endpoints
     app.get('/api/mcp/status', this.handleGetMcpStatus.bind(this));
-    app.post('/api/mcp/toggle', this.handleToggleMcp.bind(this));
+    app.post('/api/mcp/toggle', requireLocalhost, this.handleToggleMcp.bind(this));
 
     // Branch switching endpoints
     app.get('/api/branch/status', this.handleGetBranchStatus.bind(this));
-    app.post('/api/branch/switch', this.handleSwitchBranch.bind(this));
-    app.post('/api/branch/update', this.handleUpdateBranch.bind(this));
+    app.post('/api/branch/switch', requireLocalhost, this.handleSwitchBranch.bind(this));
+    app.post('/api/branch/update', requireLocalhost, this.handleUpdateBranch.bind(this));
   }
 
   /**
-   * Get environment settings (from ~/.claude-mem/settings.json)
+   * Get environment settings (from USER_SETTINGS_PATH)
    */
   private handleGetSettings = this.wrapHandler((req: Request, res: Response): void => {
-    const settingsPath = path.join(homedir(), '.claude-mem', 'settings.json');
-    this.ensureSettingsFile(settingsPath);
-    const settings = SettingsDefaultsManager.loadFromFile(settingsPath);
+    this.ensureSettingsFile(USER_SETTINGS_PATH);
+    const settings = SettingsDefaultsManager.loadFromFile(USER_SETTINGS_PATH);
     res.json(settings);
   });
 
   /**
-   * Update environment settings (in ~/.claude-mem/settings.json) with validation
+   * Update environment settings (in USER_SETTINGS_PATH) with validation
    */
   private handleUpdateSettings = this.wrapHandler((req: Request, res: Response): void => {
     // Validate all settings
@@ -65,19 +65,18 @@ export class SettingsRoutes extends BaseRouteHandler {
     }
 
     // Read existing settings
-    const settingsPath = path.join(homedir(), '.claude-mem', 'settings.json');
-    this.ensureSettingsFile(settingsPath);
+    this.ensureSettingsFile(USER_SETTINGS_PATH);
     let settings: any = {};
 
-    if (existsSync(settingsPath)) {
-      const settingsData = readFileSync(settingsPath, 'utf-8');
+    if (existsSync(USER_SETTINGS_PATH)) {
+      const settingsData = readFileSync(USER_SETTINGS_PATH, 'utf-8');
       try {
         settings = JSON.parse(settingsData);
       } catch (parseError) {
-        logger.error('SETTINGS', 'Failed to parse settings file', { settingsPath }, parseError as Error);
+        logger.error('SETTINGS', 'Failed to parse settings file', { settingsPath: USER_SETTINGS_PATH }, parseError as Error);
         res.status(500).json({
           success: false,
-          error: 'Settings file is corrupted. Delete ~/.claude-mem/settings.json to reset.'
+          error: 'Settings file is corrupted. Delete settings.json to reset.'
         });
         return;
       }
@@ -101,6 +100,9 @@ export class SettingsRoutes extends BaseRouteHandler {
       'CLAUDE_MEM_OPENROUTER_APP_NAME',
       'CLAUDE_MEM_OPENROUTER_MAX_CONTEXT_MESSAGES',
       'CLAUDE_MEM_OPENROUTER_MAX_TOKENS',
+      // Custom API Endpoints
+      'CLAUDE_MEM_GEMINI_BASE_URL',
+      'CLAUDE_MEM_OPENROUTER_BASE_URL',
       // System Configuration
       'CLAUDE_MEM_DATA_DIR',
       'CLAUDE_MEM_LOG_LEVEL',
@@ -130,7 +132,7 @@ export class SettingsRoutes extends BaseRouteHandler {
     }
 
     // Write back
-    writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf-8');
+    writeFileSync(USER_SETTINGS_PATH, JSON.stringify(settings, null, 2), 'utf-8');
 
     // Clear port cache to force re-reading from updated settings
     clearPortCache();
@@ -233,9 +235,9 @@ export class SettingsRoutes extends BaseRouteHandler {
   private validateSettings(settings: any): { valid: boolean; error?: string } {
     // Validate CLAUDE_MEM_PROVIDER
     if (settings.CLAUDE_MEM_PROVIDER) {
-    const validProviders = ['claude', 'gemini', 'openrouter'];
-    if (!validProviders.includes(settings.CLAUDE_MEM_PROVIDER)) {
-      return { valid: false, error: 'CLAUDE_MEM_PROVIDER must be "claude", "gemini", or "openrouter"' };
+      const validProviders = ['claude', 'gemini', 'openrouter'];
+      if (!validProviders.includes(settings.CLAUDE_MEM_PROVIDER)) {
+        return { valid: false, error: 'CLAUDE_MEM_PROVIDER must be "claude", "gemini", or "openrouter"' };
       }
     }
 
@@ -352,6 +354,74 @@ export class SettingsRoutes extends BaseRouteHandler {
         // Invalid URL format
         logger.debug('SETTINGS', 'Invalid URL format', { url: settings.CLAUDE_MEM_OPENROUTER_SITE_URL, error: error instanceof Error ? error.message : String(error) });
         return { valid: false, error: 'CLAUDE_MEM_OPENROUTER_SITE_URL must be a valid URL' };
+      }
+    }
+
+    // Validate CLAUDE_MEM_GEMINI_BASE_URL if provided
+    if (settings.CLAUDE_MEM_GEMINI_BASE_URL) {
+      // Trim whitespace
+      const trimmed = settings.CLAUDE_MEM_GEMINI_BASE_URL.trim();
+      if (trimmed !== settings.CLAUDE_MEM_GEMINI_BASE_URL) {
+        return { valid: false, error: 'CLAUDE_MEM_GEMINI_BASE_URL contains leading/trailing whitespace' };
+      }
+
+      if (trimmed) {
+        try {
+          const parsed = new URL(trimmed);
+
+          // Reject credentials in URL
+          if (parsed.username || parsed.password) {
+            return { valid: false, error: 'CLAUDE_MEM_GEMINI_BASE_URL must not contain credentials (username:password)' };
+          }
+
+          // Require http or https
+          if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+            return { valid: false, error: 'CLAUDE_MEM_GEMINI_BASE_URL must use http:// or https:// protocol' };
+          }
+
+          // Warn on http (insecure)
+          if (parsed.protocol === 'http:') {
+            logger.warn('SETTINGS', 'Insecure http:// protocol used for CLAUDE_MEM_GEMINI_BASE_URL - API keys will be sent in plaintext', {
+              url: trimmed
+            });
+          }
+        } catch (error) {
+          return { valid: false, error: 'CLAUDE_MEM_GEMINI_BASE_URL must be a valid URL' };
+        }
+      }
+    }
+
+    // Validate CLAUDE_MEM_OPENROUTER_BASE_URL if provided
+    if (settings.CLAUDE_MEM_OPENROUTER_BASE_URL) {
+      // Trim whitespace
+      const trimmed = settings.CLAUDE_MEM_OPENROUTER_BASE_URL.trim();
+      if (trimmed !== settings.CLAUDE_MEM_OPENROUTER_BASE_URL) {
+        return { valid: false, error: 'CLAUDE_MEM_OPENROUTER_BASE_URL contains leading/trailing whitespace' };
+      }
+
+      if (trimmed) {
+        try {
+          const parsed = new URL(trimmed);
+
+          // Reject credentials in URL
+          if (parsed.username || parsed.password) {
+            return { valid: false, error: 'CLAUDE_MEM_OPENROUTER_BASE_URL must not contain credentials (username:password)' };
+          }
+
+          // Require http or https
+          if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+            return { valid: false, error: 'CLAUDE_MEM_OPENROUTER_BASE_URL must use http:// or https:// protocol' };
+          }
+
+          // Warn on http (insecure)
+          if (parsed.protocol === 'http:') {
+            logger.warn('SETTINGS', 'Insecure http:// protocol used for CLAUDE_MEM_OPENROUTER_BASE_URL - API keys will be sent in plaintext', {
+              url: trimmed
+            });
+          }
+        } catch (error) {
+          return { valid: false, error: 'CLAUDE_MEM_OPENROUTER_BASE_URL must be a valid URL' };
+        }
       }
     }
 

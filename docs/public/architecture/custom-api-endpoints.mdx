@@ -1,0 +1,622 @@
+---
+title: "Custom API Endpoints"
+description: "Implementation plan for configurable API base URLs"
+---
+
+# Custom API Endpoints Implementation Plan
+
+## Overview
+
+This document outlines the implementation plan for adding support for custom API endpoint base URLs for Gemini and OpenRouter providers. This feature enables users to:
+
+- Use proxy servers for API requests
+- Connect to self-hosted API gateways
+- Use regional endpoints
+- Implement custom API wrappers or middleware
+
+## Current State
+
+### Hardcoded Endpoints
+
+Currently, API endpoints are hardcoded as constants:
+
+**Gemini** (`src/services/worker/GeminiAgent.ts:31`):
+```typescript
+const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
+```
+
+**OpenRouter** (`src/services/worker/OpenRouterAgent.ts:31`):
+```typescript
+const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
+```
+
+### Limitations
+
+- No way to override endpoints without modifying source code
+- Cannot use proxies or custom gateways
+- No support for regional endpoints or self-hosted alternatives
+
+## Proposed Solution
+
+### New Settings
+
+Add two new optional settings to `~/.claude-mem/settings.json`:
+
+```json
+{
+  "CLAUDE_MEM_GEMINI_BASE_URL": "https://generativelanguage.googleapis.com/v1beta/models",
+  "CLAUDE_MEM_OPENROUTER_BASE_URL": "https://openrouter.ai/api/v1/chat/completions"
+}
+```
+
+### Behavior
+
+- **If not set**: Use hardcoded default URLs (backward compatible)
+- **If set**: Use custom URL from settings
+- **Environment variables**: Support `GEMINI_BASE_URL` and `OPENROUTER_BASE_URL` as fallbacks
+
+### Priority Order
+
+1. Settings file value (`CLAUDE_MEM_GEMINI_BASE_URL`)
+2. Environment variable (`GEMINI_BASE_URL`)
+3. Hardcoded default (current behavior)
+
+## Implementation Status
+
+### Phase 1: Backend/Core ✅ COMPLETED (Revision 4 - Final)
+
+**Completed Changes:**
+
+1. **SettingsDefaultsManager.ts** (`src/shared/SettingsDefaultsManager.ts:32-34, 84-86`)
+   - Added `CLAUDE_MEM_GEMINI_BASE_URL: string` to interface
+   - Added `CLAUDE_MEM_OPENROUTER_BASE_URL: string` to interface
+   - Set default values to empty strings (uses hardcoded fallback when empty)
+
+2. **GeminiAgent.ts** (`src/services/worker/GeminiAgent.ts:13-19, 29, 316-326, 342-343, 384, 423, 431`)
+   - Renamed constant to `DEFAULT_GEMINI_API_URL`
+   - **Fixed**: Removed unused imports (`path`, `homedir`)
+   - Added import for `USER_SETTINGS_PATH`
+   - Added `getGeminiBaseUrl()` private method with priority: settings > env > default
+   - **Fixed**: Strips trailing slash to prevent double-slash in URL concatenation
+   - **Fixed**: Trims environment variable values
+   - **Fixed**: Uses `USER_SETTINGS_PATH` consistently (respects `CLAUDE_MEM_DATA_DIR`)
+   - Updated `queryGeminiMultiTurn()` to use `getGeminiBaseUrl()`
+   - Updated `getGeminiConfig()`, `isGeminiAvailable()`, `isGeminiSelected()` to use `USER_SETTINGS_PATH`
+
+3. **OpenRouterAgent.ts** (`src/services/worker/OpenRouterAgent.ts:31, 326-333, 358`)
+   - Renamed constant to `DEFAULT_OPENROUTER_API_URL`
+   - Added `getOpenRouterBaseUrl()` private method with priority: settings > env > default
+   - **Fixed**: Trims environment variable values
+   - Updated `queryOpenRouterMultiTurn()` to use `getOpenRouterBaseUrl()`
+
+4. **SettingsRoutes.ts** (`src/services/worker/http/routes/SettingsRoutes.ts:12, 20, 31-32, 36, 40-41, 48-50, 68-69, 76, 135, 105-106, 240-243, 362-428`)
+   - **Fixed**: Added import for `USER_SETTINGS_PATH`
+   - Added import for `requireLocalhost` middleware
+   - **Fixed**: Added `requireLocalhost` to ALL settings endpoints (GET and POST /api/settings)
+   - **Fixed**: Added `requireLocalhost` to all other mutating endpoints (/api/mcp/toggle, /api/branch/switch, /api/branch/update)
+   - **Fixed**: Uses `USER_SETTINGS_PATH` consistently throughout (respects relocated data directories)
+   - Added both settings to `settingKeys` array
+   - **Fixed**: Enhanced URL validation:
+     - Trim whitespace check (rejects if whitespace present)
+     - Reject credentials in URL (username:password)
+     - Protocol validation (http/https only)
+     - Warning logged when http:// is used (insecure)
+   - **Fixed**: Code formatting in `validateSettings` method
+
+5. **middleware.ts** (`src/services/worker/http/middleware.ts:27-51`)
+   - **Fixed**: Restricted CORS to localhost origins only (prevents CSRF attacks)
+   - Added origin validation with localhost patterns
+   - Allows requests with no origin (curl, Postman)
+   - Rejects non-localhost origins with error
+
+**Security Improvements:**
+- ✅ Localhost-only restriction on ALL settings endpoints prevents API key exfiltration and exposure
+- ✅ Both GET and POST /api/settings now require localhost access
+- ✅ CORS restricted to localhost origins only - prevents browser-based CSRF attacks
+- ✅ Credentials-in-URL rejection prevents accidental secret embedding
+- ✅ HTTP protocol warning alerts users to plaintext API key transmission
+
+**Correctness Improvements:**
+- ✅ Consistent use of `USER_SETTINGS_PATH` throughout (GeminiAgent, OpenRouterAgent, SettingsRoutes)
+- ✅ Respects relocated data directories via `CLAUDE_MEM_DATA_DIR`
+- ✅ Trailing slash handling prevents malformed URLs
+- ✅ Whitespace trimming validation catches common input errors
+- ✅ Environment variable values are trimmed
+
+**Code Quality Improvements:**
+- ✅ Removed unused imports from GeminiAgent
+- ✅ Consistent path handling across all components
+
+**Implementation Notes:**
+- All Codex review feedback addressed (all blockers, medium, and low priority issues)
+- Issue #6 (documentation of different URL semantics) deferred to Phase 3
+- No breaking changes - fully backward compatible
+
+### Phase 2: Frontend/UI ✅ COMPLETED (Revision 2)
+
+**Completed Changes:**
+
+1. **types.ts** (`src/ui/viewer/types.ts:73-75`)
+   - Added `CLAUDE_MEM_GEMINI_BASE_URL?: string` to Settings interface
+   - Added `CLAUDE_MEM_OPENROUTER_BASE_URL?: string` to Settings interface
+
+2. **constants/settings.ts** (`src/ui/viewer/constants/settings.ts:21-23`)
+   - Added `CLAUDE_MEM_GEMINI_BASE_URL: ''` to DEFAULT_SETTINGS
+   - Added `CLAUDE_MEM_OPENROUTER_BASE_URL: ''` to DEFAULT_SETTINGS
+
+3. **ContextSettingsModal.tsx** (`src/ui/viewer/components/ContextSettingsModal.tsx:480-490, 540-550`)
+   - Added "Custom Base URL (Optional)" field in Gemini provider section
+   - Added "Custom Endpoint URL (Optional)" field in OpenRouter provider section
+   - **Fixed**: Updated tooltips to clarify different URL semantics:
+     - Gemini: "models base URL... (model name will be appended automatically)"
+     - OpenRouter: "Must be the full chat completions URL"
+   - Both fields include helpful examples in tooltips
+   - Placeholders show default endpoint URLs
+
+**UI Features:**
+- ✅ Input fields appear only when respective provider is selected
+- ✅ Clear labeling distinguishes URL types: "Base URL" vs "Endpoint URL"
+- ✅ Detailed tooltips explain URL semantics and provide examples
+- ✅ Placeholder text shows default URLs for reference
+- ✅ Consistent with existing UI patterns (FormField component)
+
+**UX Improvements:**
+- ✅ Addressed Codex feedback: Different labels/tooltips clarify URL semantics
+- ✅ Gemini tooltip explains model name is appended automatically
+- ✅ OpenRouter tooltip explicitly states "full chat completions URL" requirement
+
+**Implementation Notes:**
+- UI follows existing patterns from other optional fields (Site URL, App Name)
+- Fields are optional - empty values use backend defaults
+- No breaking changes to existing UI
+
+### Phase 3: Documentation ✅ COMPLETED (Revision 2)
+
+**Completed Changes:**
+
+1. **gemini-provider.mdx** (`docs/public/usage/gemini-provider.mdx:38-44, 60-66, 76-113`)
+   - Added "Custom API Endpoints" section after configuration
+   - Documented use cases (proxy servers, self-hosted gateways, regional endpoints, dev/testing)
+   - Provided configuration examples (settings file and environment variable)
+   - **Clarified URL semantics**: Explained "models base" concept and automatic model name appending
+   - Added security warning about trusted endpoints and http:// usage
+   - Included example showing how URL concatenation works
+   - **Fixed**: Updated settings table to use `CLAUDE_MEM_GEMINI_RATE_LIMITING_ENABLED` (not BILLING_ENABLED)
+   - **Fixed**: Added `CLAUDE_MEM_GEMINI_BASE_URL` to settings table
+   - **Fixed**: Updated JSON example to use correct setting name
+
+2. **openrouter-provider.mdx** (`docs/public/usage/openrouter-provider.mdx:72-81, 112-149`)
+   - Added "Custom API Endpoints" section after configuration
+   - Documented use cases (proxy servers, self-hosted gateways, load balancers, dev/testing)
+   - Provided configuration examples (settings file and environment variable)
+   - **Clarified URL semantics**: Emphasized "full chat completions endpoint" requirement
+   - Added security warning about trusted endpoints and http:// usage
+   - Included example showing complete endpoint URL
+   - **Fixed**: Added `CLAUDE_MEM_OPENROUTER_BASE_URL` to settings table
+
+3. **configuration.mdx** (`docs/public/configuration.mdx:16, 30, 44`)
+   - Added `CLAUDE_MEM_GEMINI_BASE_URL` to Gemini Provider Settings table
+   - Added `CLAUDE_MEM_OPENROUTER_BASE_URL` to OpenRouter Provider Settings table
+   - Both marked as optional with description "for proxies/self-hosted"
+   - **Fixed**: Updated `CLAUDE_MEM_MODEL` default to `claude-sonnet-4-5` with shorthand note
+
+**Documentation Features:**
+- ✅ Clear use cases for custom endpoints
+- ✅ Configuration examples for both settings file and environment variables
+- ✅ **Addressed Issue #6**: Different URL semantics clearly documented
+  - Gemini: "models base" with automatic model name appending
+  - OpenRouter: "full chat completions endpoint" with nothing appended
+- ✅ Security warnings about trusted endpoints and encryption
+- ✅ Examples showing URL structure differences
+- ✅ Consistent formatting across all documentation files
+- ✅ All settings tables include custom endpoint settings
+- ✅ Correct setting names throughout (RATE_LIMITING_ENABLED, not BILLING_ENABLED)
+- ✅ Accurate default values
+
+**Implementation Notes:**
+- Documentation follows existing Mintlify MDX format
+- Uses existing components (Warning, Tip, Note)
+- Cross-references between provider docs and configuration reference
+- No breaking changes to existing documentation structure
+- All Codex feedback addressed
+
+### Phase 4: Testing (PENDING)
+
+---
+
+## Implementation Steps
+
+### 1. Update Settings Schema
+
+**File**: `src/shared/SettingsDefaultsManager.ts`
+
+**Changes**:
+- Add `CLAUDE_MEM_GEMINI_BASE_URL: string` to `SettingsDefaults` interface
+- Add `CLAUDE_MEM_OPENROUTER_BASE_URL: string` to `SettingsDefaults` interface
+- Set default values to empty strings (use hardcoded fallback when empty)
+
+```typescript
+export interface SettingsDefaults {
+  // ... existing settings ...
+
+  // Custom API Endpoints
+  CLAUDE_MEM_GEMINI_BASE_URL: string;
+  CLAUDE_MEM_OPENROUTER_BASE_URL: string;
+}
+
+private static readonly DEFAULTS: SettingsDefaults = {
+  // ... existing defaults ...
+
+  // Custom API Endpoints (empty = use hardcoded defaults)
+  CLAUDE_MEM_GEMINI_BASE_URL: '',
+  CLAUDE_MEM_OPENROUTER_BASE_URL: '',
+};
+```
+
+### 2. Update GeminiAgent
+
+**File**: `src/services/worker/GeminiAgent.ts`
+
+**Changes**:
+
+1. Keep the hardcoded constant as fallback:
+```typescript
+const DEFAULT_GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
+```
+
+2. Add method to get base URL from settings:
+```typescript
+private getGeminiBaseUrl(): string {
+  const settings = SettingsDefaultsManager.loadFromFile(USER_SETTINGS_PATH);
+
+  // Priority: settings > env var > default
+  return settings.CLAUDE_MEM_GEMINI_BASE_URL
+    || process.env.GEMINI_BASE_URL
+    || DEFAULT_GEMINI_API_URL;
+}
+```
+
+3. Update `queryGeminiMultiTurn()` method:
+```typescript
+private async queryGeminiMultiTurn(...) {
+  // ... existing code ...
+
+  const baseUrl = this.getGeminiBaseUrl();
+  const url = `${baseUrl}/${model}:generateContent?key=${apiKey}`;
+
+  // ... rest of method ...
+}
+```
+
+### 3. Update OpenRouterAgent
+
+**File**: `src/services/worker/OpenRouterAgent.ts`
+
+**Changes**:
+
+1. Keep the hardcoded constant as fallback:
+```typescript
+const DEFAULT_OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
+```
+
+2. Add method to get base URL from settings:
+```typescript
+private getOpenRouterBaseUrl(): string {
+  const settings = SettingsDefaultsManager.loadFromFile(USER_SETTINGS_PATH);
+
+  // Priority: settings > env var > default
+  return settings.CLAUDE_MEM_OPENROUTER_BASE_URL
+    || process.env.OPENROUTER_BASE_URL
+    || DEFAULT_OPENROUTER_API_URL;
+}
+```
+
+3. Update `queryOpenRouterMultiTurn()` method:
+```typescript
+private async queryOpenRouterMultiTurn(...) {
+  // ... existing code ...
+
+  const url = this.getOpenRouterBaseUrl();
+
+  const response = await fetch(url, {
+    // ... rest of fetch call ...
+  });
+
+  // ... rest of method ...
+}
+```
+
+### 4. Update Settings Routes
+
+**File**: `src/services/worker/http/routes/SettingsRoutes.ts`
+
+**Changes**:
+
+Add the new settings to the `settingKeys` array in the PUT endpoint:
+
+```typescript
+const settingKeys = [
+  // ... existing keys ...
+  'CLAUDE_MEM_GEMINI_BASE_URL',
+  'CLAUDE_MEM_OPENROUTER_BASE_URL',
+  // ... rest of keys ...
+];
+```
+
+### 5. Update UI Settings Modal (Optional)
+
+**File**: `src/ui/viewer/components/ContextSettingsModal.tsx`
+
+**Changes**:
+
+Add input fields in the provider-specific sections:
+
+```tsx
+{formState.CLAUDE_MEM_PROVIDER === 'gemini' && (
+  <>
+    {/* ... existing Gemini fields ... */}
+
+    <FormField
+      label="Custom Base URL (Optional)"
+      tooltip="Override the default Gemini API endpoint. Leave empty to use default."
+    >
+      <input
+        type="text"
+        value={formState.CLAUDE_MEM_GEMINI_BASE_URL || ''}
+        onChange={(e) => updateSetting('CLAUDE_MEM_GEMINI_BASE_URL', e.target.value)}
+        placeholder="https://generativelanguage.googleapis.com/v1beta/models"
+      />
+    </FormField>
+  </>
+)}
+
+{formState.CLAUDE_MEM_PROVIDER === 'openrouter' && (
+  <>
+    {/* ... existing OpenRouter fields ... */}
+
+    <FormField
+      label="Custom Base URL (Optional)"
+      tooltip="Override the default OpenRouter API endpoint. Leave empty to use default."
+    >
+      <input
+        type="text"
+        value={formState.CLAUDE_MEM_OPENROUTER_BASE_URL || ''}
+        onChange={(e) => updateSetting('CLAUDE_MEM_OPENROUTER_BASE_URL', e.target.value)}
+        placeholder="https://openrouter.ai/api/v1/chat/completions"
+      />
+    </FormField>
+  </>
+)}
+```
+
+### 6. Update UI Types
+
+**File**: `src/ui/viewer/types.ts`
+
+**Changes**:
+
+Add the new settings to the `Settings` interface:
+
+```typescript
+export interface Settings {
+  // ... existing settings ...
+
+  // Custom API Endpoints
+  CLAUDE_MEM_GEMINI_BASE_URL?: string;
+  CLAUDE_MEM_OPENROUTER_BASE_URL?: string;
+}
+```
+
+### 7. Update UI Constants
+
+**File**: `src/ui/viewer/constants/settings.ts`
+
+**Changes**:
+
+Add default values:
+
+```typescript
+export const DEFAULT_SETTINGS = {
+  // ... existing defaults ...
+
+  // Custom API Endpoints
+  CLAUDE_MEM_GEMINI_BASE_URL: '',
+  CLAUDE_MEM_OPENROUTER_BASE_URL: '',
+};
+```
+
+### 8. Update Documentation
+
+**Files to Update**:
+
+1. `docs/public/usage/gemini-provider.mdx`
+   - Add section on custom endpoints
+   - Include example configuration
+   - Document use cases (proxy, self-hosted)
+
+2. `docs/public/usage/openrouter-provider.mdx`
+   - Add section on custom endpoints
+   - Include example configuration
+   - Document use cases
+
+3. `docs/public/configuration.mdx`
+   - Add the new settings to the configuration reference
+   - Document environment variable alternatives
+
+**Example Documentation Section**:
+
+```markdown
+## Custom API Endpoints
+
+### Use Cases
+
+- **Proxy Servers**: Route API requests through a corporate proxy
+- **Self-Hosted Gateways**: Use custom API implementations
+- **Regional Endpoints**: Connect to region-specific API servers
+- **Development/Testing**: Point to local mock servers
+
+### Configuration
+
+Edit `~/.claude-mem/settings.json`:
+
+```json
+{
+  "CLAUDE_MEM_GEMINI_BASE_URL": "https://my-proxy.example.com/gemini/v1beta/models",
+  "CLAUDE_MEM_OPENROUTER_BASE_URL": "https://my-gateway.example.com/v1/chat/completions"
+}
+```
+
+Or use environment variables:
+
+```bash
+export GEMINI_BASE_URL="https://my-proxy.example.com/gemini/v1beta/models"
+export OPENROUTER_BASE_URL="https://my-gateway.example.com/v1/chat/completions"
+```
+
+### Important Notes
+
+- Leave empty to use default endpoints
+- Custom URLs must be fully qualified (include protocol)
+- The URL format must match the provider's API specification
+- For Gemini: Base URL should end at `/models` (model name appended automatically)
+- For OpenRouter: Full endpoint URL including `/chat/completions`
+```
+
+## Testing Plan
+
+### Unit Tests
+
+**File**: `tests/gemini_agent.test.ts`
+
+Add tests for:
+- Default URL when setting is empty
+- Custom URL from settings
+- Custom URL from environment variable
+- Priority order (settings > env > default)
+
+**File**: `tests/openrouter_agent.test.ts`
+
+Add tests for:
+- Default URL when setting is empty
+- Custom URL from settings
+- Custom URL from environment variable
+- Priority order (settings > env > default)
+
+### Integration Tests
+
+1. **Proxy Test**: Configure a local proxy and verify requests route through it
+2. **Invalid URL Test**: Verify graceful error handling with invalid URLs
+3. **Fallback Test**: Verify default URLs work when custom settings are empty
+
+### Manual Testing Checklist
+
+- [ ] Set custom Gemini URL in settings.json, verify API calls use it
+- [ ] Set custom OpenRouter URL in settings.json, verify API calls use it
+- [ ] Set via environment variables, verify they work
+- [ ] Leave empty, verify defaults are used
+- [ ] Test priority order (settings overrides env)
+- [ ] Verify UI displays and saves custom URLs correctly
+- [ ] Test with invalid URLs, verify error messages are clear
+- [ ] Verify no restart required (settings applied immediately)
+
+## Backward Compatibility
+
+- **Fully backward compatible**: Existing installations continue working without changes
+- **Default behavior unchanged**: Empty settings use hardcoded defaults
+- **No breaking changes**: All existing configurations remain valid
+
+## Security Considerations
+
+### URL Validation
+
+Consider adding basic URL validation:
+
+```typescript
+private validateUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+```
+
+### Logging
+
+- Log when custom URLs are used (for debugging)
+- Sanitize URLs in logs (remove API keys from query params)
+- Warn users if using non-HTTPS URLs
+
+### Documentation Warnings
+
+Include security warnings in documentation:
+- Only use trusted endpoints
+- Verify SSL certificates
+- Be cautious with proxy servers (they can intercept API keys)
+
+## Future Enhancements
+
+### Potential Extensions
+
+1. **Per-Model Endpoints**: Allow different URLs for different models
+2. **Retry Logic**: Add retry with fallback to default endpoint
+3. **Health Checks**: Validate custom endpoints before using them
+4. **URL Templates**: Support variable substitution in URLs
+5. **Claude SDK Endpoint**: Add similar support for Claude Agent SDK (if applicable)
+
+### Related Features
+
+- Custom headers for API requests
+- Request/response interceptors
+- API request logging/debugging mode
+
+## Implementation Checklist
+
+- [ ] Update `SettingsDefaultsManager.ts` with new settings
+- [ ] Update `GeminiAgent.ts` to read custom base URL
+- [ ] Update `OpenRouterAgent.ts` to read custom base URL
+- [ ] Update `SettingsRoutes.ts` to handle new settings
+- [ ] Update `ContextSettingsModal.tsx` with UI fields (optional)
+- [ ] Update `types.ts` with new settings interface
+- [ ] Update `constants/settings.ts` with defaults
+- [ ] Update `gemini-provider.mdx` documentation
+- [ ] Update `openrouter-provider.mdx` documentation
+- [ ] Update `configuration.mdx` reference
+- [ ] Add unit tests for URL resolution logic
+- [ ] Add integration tests for custom endpoints
+- [ ] Manual testing with real proxy/custom endpoints
+- [ ] Update CHANGELOG.md with feature description
+
+## Estimated Impact
+
+### Files Modified
+
+- Core: 2 files (GeminiAgent.ts, OpenRouterAgent.ts)
+- Settings: 3 files (SettingsDefaultsManager.ts, SettingsRoutes.ts)
+- UI: 2 files (ContextSettingsModal.tsx, types.ts, constants/settings.ts)
+- Docs: 3 files (gemini-provider.mdx, openrouter-provider.mdx, configuration.mdx)
+- Tests: 2 files (gemini_agent.test.ts, openrouter_agent.test.ts)
+
+**Total**: ~12 files
+
+### Lines of Code
+
+- Core logic: ~30 lines
+- Settings/UI: ~40 lines
+- Documentation: ~100 lines
+- Tests: ~50 lines
+
+**Total**: ~220 lines
+
+### Complexity
+
+- **Low complexity**: Straightforward setting addition
+- **No breaking changes**: Fully backward compatible
+- **Low risk**: Defaults preserve existing behavior
+
+## References
+
+- Gemini API Documentation: https://ai.google.dev/api/rest
+- OpenRouter API Documentation: https://openrouter.ai/docs
+- Current implementation: `src/services/worker/GeminiAgent.ts:31`, `src/services/worker/OpenRouterAgent.ts:31`

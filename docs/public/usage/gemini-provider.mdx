@@ -40,7 +40,8 @@ Claude-mem supports Google's Gemini API as an alternative to the Claude Agent SD
 | `CLAUDE_MEM_PROVIDER` | `claude`, `gemini` | `claude` | AI provider for observation extraction |
 | `CLAUDE_MEM_GEMINI_API_KEY` | string | — | Your Gemini API key |
 | `CLAUDE_MEM_GEMINI_MODEL` | `gemini-2.5-flash-lite`, `gemini-2.5-flash`, `gemini-3-flash` | `gemini-2.5-flash-lite` | Gemini model to use |
-| `CLAUDE_MEM_GEMINI_BILLING_ENABLED` | `true`, `false` | `false` | Skip rate limiting if billing is enabled on Google Cloud |
+| `CLAUDE_MEM_GEMINI_RATE_LIMITING_ENABLED` | `true`, `false` | `true` | Enable rate limiting for free tier (disable if billing enabled on Google Cloud) |
+| `CLAUDE_MEM_GEMINI_BASE_URL` | string | — | Custom models base URL (optional, for proxies/self-hosted) |
 
 ### Using the Settings UI
 
@@ -61,7 +62,7 @@ Edit `~/.claude-mem/settings.json`:
   "CLAUDE_MEM_PROVIDER": "gemini",
   "CLAUDE_MEM_GEMINI_API_KEY": "your-api-key-here",
   "CLAUDE_MEM_GEMINI_MODEL": "gemini-2.5-flash-lite",
-  "CLAUDE_MEM_GEMINI_BILLING_ENABLED": "true"
+  "CLAUDE_MEM_GEMINI_RATE_LIMITING_ENABLED": "false"
 }
 ```
 
@@ -72,6 +73,45 @@ export GEMINI_API_KEY="your-api-key-here"
 ```
 
 The settings file takes precedence over the environment variable.
+
+## Custom API Endpoints
+
+You can override the default Gemini API endpoint to use proxy servers, self-hosted gateways, or regional endpoints.
+
+### Use Cases
+
+- **Proxy Servers**: Route API requests through a corporate proxy
+- **Self-Hosted Gateways**: Use custom API implementations
+- **Regional Endpoints**: Connect to region-specific API servers
+- **Development/Testing**: Point to local mock servers
+
+### Configuration
+
+Edit `~/.claude-mem/settings.json`:
+
+```json
+{
+  "CLAUDE_MEM_GEMINI_BASE_URL": "https://my-proxy.example.com/v1beta/models"
+}
+```
+
+Or use environment variable:
+
+```bash
+export GEMINI_BASE_URL="https://my-proxy.example.com/v1beta/models"
+```
+
+### Important Notes
+
+- Leave empty to use the default endpoint (`https://generativelanguage.googleapis.com/v1beta/models`)
+- The URL should be the **models base** - the model name will be appended automatically
+- Example: If you set `https://proxy.com/v1beta/models`, requests will go to `https://proxy.com/v1beta/models/gemini-2.5-flash:generateContent`
+- Custom URLs must use `http://` or `https://` protocol
+- Settings file takes precedence over environment variable
+
+<Warning>
+**Security**: Only use trusted endpoints. Custom endpoints can intercept your API keys. Avoid using `http://` (unencrypted) in production.
+</Warning>
 
 ## Available Models
 
