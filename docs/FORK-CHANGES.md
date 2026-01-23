@@ -3,7 +3,7 @@
 This document is a step-by-step guide for merging upstream releases into the JillVernus fork.
 Categories are ordered by severity (critical fixes first).
 
-**Current Fork Version**: `9.0.5-jv.10`
+**Current Fork Version**: `9.0.5-jv.11`
 **Upstream Base**: `v9.0.5` (commit `3d40b45f`)
 **Last Merge**: 2026-01-14
 **Recent Updates**:
@@ -15,6 +15,7 @@ Categories are ordered by severity (critical fixes first).
 - `9.0.5-jv.8`: Fixed folder CLAUDE.md generation - disabled by default, no empty files created
 - `9.0.5-jv.9`: Fixed Gemini/OpenRouter memorySessionId bug - generate UUID for non-Claude providers
 - `9.0.5-jv.10`: Dynamic Model Selection - URL normalization, dynamic model fetching, OpenRouter→OpenAI rename
+- `9.0.5-jv.11`: Settings Hot-Reload - apply provider/model changes without worker restart
 
 ---
 
@@ -31,54 +32,56 @@ Categories are ordered by severity (critical fixes first).
 | 5 | D: MCP Schema Enhancement | MCP usability - visible tool parameters | 1 | Active |
 | 6 | H: Custom API Endpoints | Feature - configurable Gemini/OpenAI endpoints | 9 | Active |
 | 7 | K: Dynamic Model Selection | Feature - URL normalization, model fetching, OpenRouter→OpenAI | 15 | Active |
-| 8 | I: Folder CLAUDE.md Optimization | Fix - disable by default, no empty files | 3 | Active |
-| 9 | B: Observation Batching | Cost reduction - batch API calls | 5 | ⏸️ ON HOLD |
-| 10 | F: Autonomous Execution Prevention | Safety - block SDK autonomous behavior | 3 | ⏸️ ON HOLD |
-| 11 | G: Fork Configuration | Identity - version and marketplace config | 4 | Active |
+| 8 | L: Settings Hot-Reload | Feature - apply settings changes without worker restart | 7 | Active |
+| 9 | I: Folder CLAUDE.md Optimization | Fix - disable by default, no empty files | 3 | Active |
+| 10 | B: Observation Batching | Cost reduction - batch API calls | 5 | ⏸️ ON HOLD |
+| 11 | F: Autonomous Execution Prevention | Safety - block SDK autonomous behavior | 3 | ⏸️ ON HOLD |
+| 12 | G: Fork Configuration | Identity - version and marketplace config | 4 | Active |
 
 ### Files by Category
 
-| File | C | A | J | E | D | H | K | I | B | F | G |
-|------|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
-| `src/services/worker/SDKAgent.ts` | + | | | | | | | | + | + | |
-| `src/services/worker/SessionManager.ts` | + | | | | | | | | + | | |
-| `src/services/worker-service.ts` | + | | | | | | + | | | | |
-| `src/services/worker-types.ts` | | | | | | | + | | | | |
-| `src/shared/worker-utils.ts` | | + | | | | | | | | | |
-| `src/services/infrastructure/HealthMonitor.ts` | | + | | | | | | | | | |
-| `plugin/scripts/worker-cli.js` | | + | | | | | | | | | |
-| `plugin/scripts/smart-install.js` | | + | | | | | | | | | |
-| `src/services/worker/BranchManager.ts` | | + | | | | | | | | | |
-| `src/services/integrations/CursorHooksInstaller.ts` | | + | | | | | | | | | |
-| `src/services/context/ContextBuilder.ts` | | + | | | | | | | | | |
-| `src/services/sync/ChromaSync.ts` | | + | | | | | | | | | |
-| `src/services/worker/GeminiAgent.ts` | | | + | | | + | + | | | | |
-| `src/services/worker/OpenAIAgent.ts` | | | + | | | + | + | | | | |
-| `src/services/worker/SearchManager.ts` | | | | + | | | | | | | |
-| `src/services/sqlite/SessionSearch.ts` | | | | + | | | | | | | |
-| `src/servers/mcp-server.ts` | | | | | + | | | | | | |
-| `src/shared/SettingsDefaultsManager.ts` | | | | | | + | + | + | + | + | |
-| `src/services/worker/http/routes/SettingsRoutes.ts` | | | | | | + | + | | | | |
-| `src/services/worker/http/routes/SessionRoutes.ts` | | | | | | | + | | | | |
-| `src/services/worker/http/middleware.ts` | | | | | | + | | | | | |
-| `src/ui/viewer/types.ts` | | | | | | + | + | | | | |
-| `src/ui/viewer/constants/settings.ts` | | | | | | + | + | | | | |
-| `src/ui/viewer/constants/api.ts` | | | | | | | + | | | | |
-| `src/ui/viewer/hooks/useSettings.ts` | | | | | | + | + | | | | |
-| `src/ui/viewer/hooks/useModelFetch.ts` | | | | | | | + | | | | |
-| `src/ui/viewer/components/ContextSettingsModal.tsx` | | | | | | + | + | | | | |
-| `src/utils/url-utils.ts` | | | | | | | + | | | | |
-| `src/services/worker/agents/types.ts` | | | | | | | + | | | | |
-| `src/utils/claude-md-utils.ts` | | | | | | | | + | | | |
-| `src/services/worker/agents/ResponseProcessor.ts` | | | | | | | | + | | | |
-| `src/sdk/prompts.ts` | | | | | | | | | + | | |
-| `src/services/queue/SessionQueueProcessor.ts` | | | | | | | | | + | | |
-| `src/cli/handlers/session-init.ts` | | | | | | | | | | + | |
-| `package.json` | | | | | | | | | | | + |
-| `plugin/package.json` | | | | | | | | | | | + |
-| `plugin/.claude-plugin/plugin.json` | | | | | | | | | | | + |
-| `.claude-plugin/marketplace.json` | | | | | | | | | | | + |
-| `README.md` | | | | | | | + | | | | |
+| File | C | A | J | E | D | H | K | L | I | B | F | G |
+|------|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+| `src/services/worker/SDKAgent.ts` | + | | | | | | | | | + | + | |
+| `src/services/worker/SessionManager.ts` | + | | | | | | | + | | + | | |
+| `src/services/worker-service.ts` | + | | | | | | + | + | | | | |
+| `src/services/worker-types.ts` | | | | | | | + | + | | | | |
+| `src/shared/worker-utils.ts` | | + | | | | | | | | | | |
+| `src/services/infrastructure/HealthMonitor.ts` | | + | | | | | | | | | | |
+| `plugin/scripts/worker-cli.js` | | + | | | | | | | | | | |
+| `plugin/scripts/smart-install.js` | | + | | | | | | | | | | |
+| `src/services/worker/BranchManager.ts` | | + | | | | | | | | | | |
+| `src/services/integrations/CursorHooksInstaller.ts` | | + | | | | | | | | | | |
+| `src/services/context/ContextBuilder.ts` | | + | | | | | | | | | | |
+| `src/services/sync/ChromaSync.ts` | | + | | | | | | | | | | |
+| `src/services/worker/GeminiAgent.ts` | | | + | | | + | + | | | | | |
+| `src/services/worker/OpenAIAgent.ts` | | | + | | | + | + | | | | | |
+| `src/services/worker/SearchManager.ts` | | | | + | | | | | | | | |
+| `src/services/sqlite/SessionSearch.ts` | | | | + | | | | | | | | |
+| `src/servers/mcp-server.ts` | | | | | + | | | | | | | |
+| `src/shared/SettingsDefaultsManager.ts` | | | | | | + | + | | + | + | + | |
+| `src/services/worker/http/routes/SettingsRoutes.ts` | | | | | | + | + | | | | | |
+| `src/services/worker/http/routes/SessionRoutes.ts` | | | | | | | + | + | | | | |
+| `src/services/worker/http/middleware.ts` | | | | | | + | | | | | | |
+| `src/ui/viewer/types.ts` | | | | | | + | + | | | | | |
+| `src/ui/viewer/constants/settings.ts` | | | | | | + | + | | | | | |
+| `src/ui/viewer/constants/api.ts` | | | | | | | + | | | | | |
+| `src/ui/viewer/hooks/useSettings.ts` | | | | | | + | + | | | | | |
+| `src/ui/viewer/hooks/useModelFetch.ts` | | | | | | | + | | | | | |
+| `src/ui/viewer/components/ContextSettingsModal.tsx` | | | | | | + | + | | | | | |
+| `src/utils/url-utils.ts` | | | | | | | + | | | | | |
+| `src/services/worker/agents/types.ts` | | | | | | | + | | | | | |
+| `src/utils/claude-md-utils.ts` | | | | | | | | | + | | | |
+| `src/services/worker/agents/ResponseProcessor.ts` | | | | | | | | + | + | | | |
+| `src/sdk/prompts.ts` | | | | | | | | | | + | | |
+| `src/services/queue/SessionQueueProcessor.ts` | | | | | | | | + | | + | | |
+| `src/services/worker/settings/SettingsWatcher.ts` | | | | | | | | + | | | | |
+| `src/cli/handlers/session-init.ts` | | | | | | | | | | | + | |
+| `package.json` | | | | | | | | | | | | + |
+| `plugin/package.json` | | | | | | | | | | | | + |
+| `plugin/.claude-plugin/plugin.json` | | | | | | | | | | | | + |
+| `.claude-plugin/marketplace.json` | | | | | | | | | | | | + |
+| `README.md` | | | | | | | + | | | | | |
 
 ---
 
@@ -474,6 +477,62 @@ grep -n "currentProvider" src/services/worker-types.ts
 ```
 
 **Plan**: `docs/plans/2026-01-22-dynamic-model-selection.md`
+
+---
+
+### Category L: Settings Hot-Reload (Priority 8)
+
+**Problem**: Changing provider/model settings in `~/.claude-mem/settings.json` requires a full worker restart to take effect. This is disruptive during development and testing.
+
+**Solution**: Implement automatic generator restart when settings change, without requiring worker restart.
+
+**Files**:
+| File | Change |
+|------|--------|
+| `src/services/worker/settings/SettingsWatcher.ts` | NEW - Polls settings.json for changes (2s interval, 500ms debounce) |
+| `src/services/worker-service.ts` | Integrates SettingsWatcher, handles change events |
+| `src/services/worker-types.ts` | Adds hot-reload fields to ActiveSession |
+| `src/services/queue/SessionQueueProcessor.ts` | Emits idle/busy events, fixes waitForMessage abort |
+| `src/services/worker/SessionManager.ts` | Idle state tracking, restart scheduling, isGeneratorSafeToRestart |
+| `src/services/worker/http/routes/SessionRoutes.ts` | Generator identity tracking, restart mutex, tryRestartGeneratorAsync |
+| `src/services/worker/agents/ResponseProcessor.ts` | Calls decrementInFlight after processing |
+
+**How It Works**:
+1. `SettingsWatcher` polls `~/.claude-mem/settings.json` every 2 seconds
+2. When restart-trigger keys change, active sessions are marked for restart
+3. Queue processor emits `idle` when waiting for messages, `busy` when processing
+4. When a generator becomes idle (queue empty, no in-flight work), it restarts with new settings
+5. If already idle when settings change, restart happens immediately
+
+**Restart-Trigger Keys**:
+- `CLAUDE_MEM_PROVIDER`
+- `CLAUDE_MEM_MODEL`
+- `CLAUDE_MEM_GEMINI_MODEL`
+- `CLAUDE_MEM_OPENAI_MODEL`
+- `CLAUDE_MEM_GEMINI_API_KEY`
+- `CLAUDE_MEM_OPENAI_API_KEY`
+- `CLAUDE_MEM_GEMINI_BASE_URL`
+- `CLAUDE_MEM_OPENAI_BASE_URL`
+
+**Safety Features**:
+- Generator identity tracking prevents `.finally()` race conditions
+- Restart mutex prevents concurrent restart attempts
+- Only restarts when safe: queue empty + generator idle + no in-flight work
+- Debounce (500ms) prevents spurious restarts from partial file writes
+
+**Verification**:
+```bash
+# Check SettingsWatcher is integrated
+grep -n 'SettingsWatcher' src/services/worker-service.ts
+
+# Check idle/busy events
+grep -n "emit('idle')" src/services/queue/SessionQueueProcessor.ts
+
+# Check restart logic
+grep -n 'tryRestartGeneratorAsync' src/services/worker/http/routes/SessionRoutes.ts
+```
+
+**Plan**: `docs/plans/2026-01-23-settings-hot-reload.md`
 
 ---
 
