@@ -706,8 +706,9 @@ export class SessionStore {
    * Update the last input tokens count for a session
    * Called by SDKAgent after each API response to track context size
    * Persisted for worker restart survival
+   * Pass null to reset (e.g., after rollover to prevent immediate re-trigger)
    */
-  updateLastInputTokens(sessionDbId: number, lastInputTokens: number): void {
+  updateLastInputTokens(sessionDbId: number, lastInputTokens: number | null): void {
     this.db.prepare(`
       UPDATE sdk_sessions
       SET last_input_tokens = ?

@@ -162,6 +162,12 @@ export class SessionRoutes extends BaseRouteHandler {
         session.claudeResumeSessionId = null;
         this.dbManager.getSessionStore().updateClaudeResumeSessionId(session.sessionDbId, null);
 
+        // CRITICAL: Reset lastInputTokens to prevent immediate re-trigger of rollover
+        // Without this, the first API call after rollover returns high token count
+        // (conversation history is still large), which immediately triggers another rollover
+        session.lastInputTokens = undefined;
+        this.dbManager.getSessionStore().updateLastInputTokens(session.sessionDbId, null);
+
         // Note: memorySessionId stays the same (stable FK identity)
         // Observations will continue to be stored under the same memorySessionId
       }
