@@ -168,6 +168,17 @@ export class SessionRoutes extends BaseRouteHandler {
         session.lastInputTokens = undefined;
         this.dbManager.getSessionStore().updateLastInputTokens(session.sessionDbId, null);
 
+        // MEMORY LEAK FIX: Clear conversationHistory on rollover
+        // Without this, conversationHistory grows unbounded since SDKAgent doesn't truncate
+        // (unlike Gemini/OpenAI which call truncateHistory). The SDK context is being reset
+        // anyway, so the old history is useless and just consumes memory.
+        const oldHistoryLength = session.conversationHistory.length;
+        session.conversationHistory = [];
+        logger.info('SESSION', `ROLLOVER_HISTORY_CLEARED | oldLength=${oldHistoryLength}`, {
+          sessionId: session.sessionDbId,
+          oldHistoryLength
+        });
+
         // Note: memorySessionId stays the same (stable FK identity)
         // Observations will continue to be stored under the same memorySessionId
       }
