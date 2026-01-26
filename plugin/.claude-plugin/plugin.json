@@ -1,6 +1,6 @@
 {
   "name": "claude-mem",
-  "version": "9.0.6-jv.10",
+  "version": "9.0.6-jv.11",
   "description": "Persistent memory system for Claude Code - with observation batching",
   "author": {
     "name": "JillVernus (fork of thedotmack/claude-mem)"
