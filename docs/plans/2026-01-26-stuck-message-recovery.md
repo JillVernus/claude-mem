@@ -2,7 +2,7 @@
 
 **Issue**: Messages stuck in "processing" status after SDK/Claude CLI crash
 **Date**: 2026-01-26
-**Status**: 🔄 Phase 1-3 Implemented (v9.0.6-jv.7), Phase 4 In Progress (v9.0.6-jv.8)
+**Status**: ✅ Complete (v9.0.6-jv.8)
 
 ## Related Issues
 
@@ -483,10 +483,10 @@ claim(sessionDbId: number): PersistentPendingMessage | null {
 - [x] SDK prefetch works correctly (no duplicate prompts)
 
 ### Phase 4 (v9.0.6-jv.8)
-- [ ] Timed-out messages (>5 min) from failed generators are reclaimed
-- [ ] Active sessions (worker_port set) are NOT affected
-- [ ] Timeout recovery logs include age and reason
-- [ ] Combined with Phase 1-3 recovery (no overlap/conflict)
+- [x] Timed-out messages (>5 min) from failed generators are reclaimed
+- [x] Active sessions (worker_port set) are NOT affected
+- [x] Timeout recovery logs include age and reason
+- [x] Combined with Phase 1-3 recovery (no overlap/conflict)
 
 ---
 
