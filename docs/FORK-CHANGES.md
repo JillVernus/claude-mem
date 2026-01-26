@@ -3,10 +3,11 @@
 This document is a step-by-step guide for merging upstream releases into the JillVernus fork.
 Categories are ordered by severity (critical fixes first).
 
-**Current Fork Version**: `9.0.6-jv.6`
+**Current Fork Version**: `9.0.6-jv.7`
 **Upstream Base**: `v9.0.6` (commit `c29d91a9`)
 **Last Merge**: 2026-01-23
 **Recent Updates**:
+- `9.0.6-jv.7`: Stuck Message Recovery - recover orphaned "processing" messages after worker crash using storeInitEpoch
 - `9.0.6-jv.6`: Memory Leak Fix - clear conversationHistory on Claude rollover to prevent unbounded growth
 - `9.0.6-jv.5`: Safe Message Processing - claim→process→delete pattern prevents message loss during restarts/rollover
 - `9.0.6-jv.4`: Infinite Rollover Loop Fix - reset lastInputTokens after rollover to prevent immediate re-trigger
@@ -32,7 +33,7 @@ Categories are ordered by severity (critical fixes first).
 | 4 | J: Gemini/OpenAI memorySessionId | Bugfix - non-Claude providers crash without UUID | 2 | Active |
 | 5 | M: Context Truncation | Bugfix - prevent runaway context growth for Gemini/OpenAI | 8 | Active |
 | 6 | N: Claude Session Rollover | Bugfix - restart SDK sessions when context grows too large | 6 | Active |
-| 7 | O: Safe Message Processing | Bugfix - claim→process→delete prevents message loss | 8 | Active |
+| 7 | O: Safe Message Processing | Bugfix - claim→process→delete prevents message loss + orphan recovery | 8 | Active |
 | 8 | E: Empty Search Params Fix | MCP usability - empty search returns results | 2 | Active |
 | 9 | D: MCP Schema Enhancement | MCP usability - visible tool parameters | 1 | Active |
 | 10 | H: Custom API Endpoints | Feature - configurable Gemini/OpenAI endpoints | 9 | Active |
@@ -678,6 +679,58 @@ grep -n 'CLAUDE_ROLLOVER_TRIGGERED\|CLAUDE_ROLLOVER_SCHEDULED' src/services/work
 ```
 
 **Plan**: `docs/plans/2026-01-23-plan-2-claude-session-rollover.md`
+
+---
+
+### Category O: Safe Message Processing (Priority 7)
+
+**Problem**: When batching is disabled, the safe `claim()` pattern marks messages as "processing" before yielding them. If the SDK/Claude CLI crashes after claiming but before completing, messages stay stuck in "processing" status indefinitely.
+
+**Solution**: Two-part implementation:
+1. **v9.0.6-jv.5**: Safe claim pattern - `claim()` marks as "processing", `markProcessed()` after completion
+2. **v9.0.6-jv.7**: Orphan recovery - `storeInitEpoch`-based detection recovers stuck messages on restart
+
+**Files**:
+| File | Change |
+|------|--------|
+| `src/services/sqlite/PendingMessageStore.ts` | `claim()` with safe pattern, `reclaimOrphanedMessage()` for orphan recovery |
+| `src/services/sqlite/transactions.ts` | `storeObservationsAndMarkComplete()` atomic transaction |
+| `src/services/queue/SessionQueueProcessor.ts` | `createIterator()` uses safe `claim()` pattern |
+| `src/services/worker/SDKAgent.ts` | Passes `messageId` to ResponseProcessor for atomic mark-complete |
+| `src/services/worker/SessionManager.ts` | Message queue lifecycle management |
+| `src/services/worker/agents/ResponseProcessor.ts` | Calls atomic `storeObservationsAndMarkComplete()` |
+| `src/services/worker/GeminiAgent.ts` | Uses safe message processing pattern |
+| `src/services/worker/OpenAIAgent.ts` | Uses safe message processing pattern |
+
+**Key Features**:
+- **Safe claim pattern**: Messages stay in DB with status='processing' until explicitly completed
+- **Atomic completion**: `storeObservationsAndMarkComplete()` stores observations AND marks processed in single transaction
+- **Orphan detection**: Uses `storeInitEpoch` to identify messages from previous crashed workers
+- **Retry safeguard**: `retry_count` incremented on each re-claim, fails after 3 attempts (poison message protection)
+- **NULL timestamp handling**: Query includes `IS NULL` check for edge case crashes
+- **SDK prefetch safe**: Only reclaims messages with `started_processing_at_epoch < storeInitEpoch`
+
+**How Orphan Recovery Works**:
+1. `PendingMessageStore` captures `storeInitEpoch = Date.now()` at construction
+2. On `claim()`, first checks for orphaned messages: `status='processing' AND (started_processing_at_epoch IS NULL OR started_processing_at_epoch < storeInitEpoch)`
+3. Orphaned messages get re-claimed with `retry_count++` and new timestamp
+4. After 3 retries, poison messages are marked 'failed' to prevent infinite loops
+5. Only after clearing orphans does it claim new 'pending' messages
+
+**Verification**:
+```bash
+# Check safe claim pattern
+grep -n 'reclaimOrphanedMessage\|storeInitEpoch' src/services/sqlite/PendingMessageStore.ts
+
+# Check atomic transaction
+grep -n 'storeObservationsAndMarkComplete' src/services/sqlite/transactions.ts
+
+# Check no stuck processing messages after restart
+sqlite3 ~/.claude-mem/claude-mem.db "SELECT COUNT(*) FROM pending_messages WHERE status='processing'"
+```
+
+**Plans**:
+- `docs/plans/2026-01-26-stuck-message-recovery.md` (orphan recovery)
 
 ---
 
