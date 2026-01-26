@@ -322,16 +322,86 @@ export class SessionRoutes extends BaseRouteHandler {
               session.abortController = new AbortController();
               oldController.abort();
 
-              // Small delay before restart
-              setTimeout(async () => {
+              // Small delay before restart - now with error handling and retry logic
+              setTimeout(() => {
+                // Wrap in async IIFE with .catch() to prevent unhandled promise rejection
+                (async () => {
                 const stillExists = this.sessionManager.getSession(sessionDbId);
-                if (stillExists && !stillExists.generatorPromise) {
-                  await this.startGeneratorWithProvider(stillExists, this.getSelectedProvider(), 'crash-recovery');
-                } else if (stillExists?.generatorPromise) {
+                if (!stillExists) return;
+
+                // Check recoveryInProgress flag to prevent concurrent recovery
+                if (stillExists.recoveryInProgress) {
+                  logger.debug('SESSION', `DIAGNOSTIC: Skipped crash recovery - recovery already in progress`, {
+                    sessionId: sessionDbId
+                  });
+                  return;
+                }
+
+                if (stillExists.generatorPromise) {
                   logger.warn('SESSION', `DIAGNOSTIC: Skipped restart - generator already running`, {
                     sessionId: sessionDbId
                   });
+                  return;
                 }
+
+                // Set recoveryInProgress flag
+                stillExists.recoveryInProgress = true;
+                let retryCount = 0;
+                const maxRetries = 2;
+
+                try {
+                  while (retryCount <= maxRetries) {
+                    try {
+                      await this.startGeneratorWithProvider(stillExists, this.getSelectedProvider(), 'crash-recovery');
+                      // Success - exit retry loop
+                      break;
+                    } catch (error) {
+                      const errorMessage = error instanceof Error ? error.message : String(error);
+                      logger.error('SESSION', `Crash recovery attempt ${retryCount + 1} failed`, {
+                        sessionId: sessionDbId,
+                        retryCount,
+                        maxRetries,
+                        error: errorMessage
+                      });
+
+                      // If this looks like a terminal resume error, clear resume ID and retry without resume
+                      if (this.isTerminalResumeError(errorMessage) && stillExists.claudeResumeSessionId) {
+                        logger.warn('SESSION', 'Clearing stale resume ID for crash recovery retry', {
+                          sessionId: sessionDbId,
+                          previousResumeId: stillExists.claudeResumeSessionId
+                        });
+
+                        // Clear in database
+                        const sessionStore = this.dbManager.getSessionStore();
+                        sessionStore.updateClaudeResumeSessionId(sessionDbId, null);
+
+                        // Clear in memory
+                        stillExists.claudeResumeSessionId = null;
+                      }
+
+                      retryCount++;
+                      if (retryCount > maxRetries) {
+                        logger.error('SESSION', `Crash recovery failed after ${maxRetries + 1} attempts - giving up`, {
+                          sessionId: sessionDbId
+                        });
+                        // Don't throw - just log and give up to prevent unhandled rejection
+                        break;
+                      }
+
+                      // Small delay before retry
+                      await new Promise(resolve => setTimeout(resolve, 500));
+                    }
+                  }
+                } finally {
+                  // Always clear recoveryInProgress flag
+                  stillExists.recoveryInProgress = false;
+                }
+                })().catch(error => {
+                  logger.error('SESSION', 'Unhandled error in crash recovery callback', {
+                    sessionId: sessionDbId,
+                    error: error instanceof Error ? error.message : String(error)
+                  });
+                });
               }, 1000);
             } else {
               // No pending work - abort to kill the child process
@@ -909,4 +979,25 @@ export class SessionRoutes extends BaseRouteHandler {
       skipped: false
     });
   });
+
+  /**
+   * Determine if an error indicates the resume session is permanently invalid
+   * These errors mean we should clear the resume ID and start fresh
+   * (Mirrors SDKAgent.isTerminalResumeError for crash recovery path)
+   */
+  private isTerminalResumeError(errorMessage: string): boolean {
+    const terminalPatterns = [
+      /Claude Code process aborted by user/i,
+      /invalid session id/i,
+      /unknown session/i,
+      /no such session/i,
+      /session not found/i,
+      /cannot resume/i,
+      /context lost/i,
+      /session expired/i,
+      /session timed out/i,
+      /resume failed/i
+    ];
+    return terminalPatterns.some(pattern => pattern.test(errorMessage));
+  }
 }

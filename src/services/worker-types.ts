@@ -50,6 +50,11 @@ export interface ActiveSession {
    * Only observation/summarize prompts have real messageIds.
    */
   processingMessageIdQueue?: (number | undefined)[];
+  /**
+   * Per-session flag to prevent concurrent recovery attempts.
+   * Set true when crash recovery starts, cleared in finally block.
+   */
+  recoveryInProgress?: boolean;
 }
 
 export interface PendingMessage {

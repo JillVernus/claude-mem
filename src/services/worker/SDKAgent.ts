@@ -126,6 +126,17 @@ export class SDKAgent {
       }
     }
 
+    // Track whether this is a resume attempt (needed for error handling)
+    const isResumeAttempt = hasClaudeResumeId && session.lastPromptNumber > 1;
+
+    // Capture the abort controller for this query run
+    // IMPORTANT: session.abortController can be replaced during restart, so we capture the
+    // controller we're actually using to correctly detect intentional aborts in the catch block
+    const runAbortController = session.abortController;
+
+    // Process SDK messages with terminal error handling
+    // query() is inside try to catch synchronous startup/resume errors
+    try {
     // Run Agent SDK query loop
     // Only resume if we have a captured Claude resume session ID
     // Use custom spawn to capture PIDs for zombie process cleanup (Issue #737)
@@ -136,17 +147,16 @@ export class SDKAgent {
         // Only resume if BOTH: (1) we have a claudeResumeSessionId AND (2) this isn't the first prompt
         // On worker restart, claudeResumeSessionId may exist from a previous SDK session but we
         // need to start fresh since the SDK context was lost
-        ...(hasClaudeResumeId && session.lastPromptNumber > 1 && { resume: session.claudeResumeSessionId }),
+        ...(isResumeAttempt && { resume: session.claudeResumeSessionId }),
         disallowedTools,
-        abortController: session.abortController,
+        abortController: runAbortController,
         pathToClaudeCodeExecutable: claudePath,
         // Custom spawn function captures PIDs to fix zombie process accumulation
         spawnClaudeCodeProcess: createPidCapturingSpawn(session.sessionDbId)
       }
     });
 
-    // Process SDK messages
-    for await (const message of queryResult) {
+      for await (const message of queryResult) {
       // Capture Claude resume session ID from SDK messages
       // This is the SDK's session_id used for --resume flag
       // Update on every message in case SDK returns a new session_id
@@ -291,6 +301,61 @@ export class SDKAgent {
       if (message.type === 'result' && message.subtype === 'success') {
         // Usage telemetry is captured at SDK level
       }
+      }
+    } catch (error) {
+      // Handle terminal errors that indicate the resume session is invalid
+      const errorMessage = error instanceof Error ? error.message : String(error);
+
+      // Skip cleanup if this was an intentional abort (user-initiated restart/rollover)
+      // Use runAbortController (captured before query) since session.abortController may be replaced
+      const wasIntentionalAbort = runAbortController?.signal?.aborted === true;
+
+      // Determine if this is a terminal error (resume impossible) vs transient error (retry may work)
+      const isTerminalError = this.isTerminalResumeError(errorMessage);
+      const isTransientError = this.isTransientError(errorMessage);
+
+      // Only clear resume ID if:
+      // 1. This was a resume attempt (we were trying to resume an existing session)
+      // 2. The error is terminal (not transient)
+      // 3. This was NOT an intentional abort (user-initiated)
+      // Transient errors take precedence - if it's both terminal and transient patterns, keep the resume ID
+      if (isResumeAttempt && isTerminalError && !isTransientError && !wasIntentionalAbort) {
+        logger.warn('SDK', 'Terminal error during resume - clearing stale resume ID', {
+          sessionId: session.sessionDbId,
+          wasResumeAttempt: isResumeAttempt,
+          error: errorMessage,
+          previousResumeId: session.claudeResumeSessionId
+        });
+
+        // Clear in database
+        this.dbManager.getSessionStore().updateClaudeResumeSessionId(
+          session.sessionDbId,
+          null
+        );
+
+        // Clear in memory (prevent cache from reusing stale value)
+        // Use null for consistency with DB and type (string | null)
+        session.claudeResumeSessionId = null;
+
+        logger.info('SDK', 'RESUME_ID_CLEARED_ON_TERMINAL_ERROR', {
+          sessionId: session.sessionDbId,
+          error: errorMessage
+        });
+      } else {
+        // Log the error but don't clear resume ID
+        logger.error('SDK', 'Session generator failed', {
+          sessionId: session.sessionDbId,
+          project: session.project,
+          wasResumeAttempt: isResumeAttempt,
+          wasIntentionalAbort,
+          isTerminalError,
+          isTransientError,
+          error: errorMessage
+        });
+      }
+
+      // Re-throw to let the caller handle the error
+      throw error;
     }
 
     // Mark session complete
@@ -299,6 +364,62 @@ export class SDKAgent {
       sessionId: session.sessionDbId,
       duration: `${(sessionDuration / 1000).toFixed(1)}s`
     });
+  }
+
+  /**
+   * Determine if an error indicates the resume session is permanently invalid
+   * These errors mean we should clear the resume ID and start fresh
+   */
+  private isTerminalResumeError(errorMessage: string): boolean {
+    const terminalPatterns = [
+      /Claude Code process aborted by user/i,
+      /invalid session id/i,
+      /unknown session/i,
+      /no such session/i,
+      /session not found/i,
+      /cannot resume/i,
+      /context lost/i,
+      /session expired/i,
+      /session timed out/i,  // Session-level timeout (terminal, not network timeout)
+      /resume failed/i
+    ];
+    return terminalPatterns.some(pattern => pattern.test(errorMessage));
+  }
+
+  /**
+   * Determine if an error is transient (retry may work, keep resume ID)
+   * Transient errors take precedence over terminal patterns
+   * NOTE: Patterns are narrowed to avoid false positives (e.g., session IDs containing digits)
+   */
+  private isTransientError(errorMessage: string): boolean {
+    const transientPatterns = [
+      // Network-specific timeouts (not "session timed out")
+      /connect.*timeout/i,
+      /request.*timeout/i,
+      /network.*timeout/i,
+      /ETIMEDOUT/,
+      /ECONNRESET/,
+      /ECONNREFUSED/,
+      /ENOTFOUND/,
+      /EAI_AGAIN/,
+      // Rate limiting
+      /rate limit/i,
+      /too many requests/i,
+      // HTTP status codes with word boundaries to avoid matching digits in session IDs
+      /\b429\b/,
+      /\b502\b/,
+      /\b503\b/,
+      /\b504\b/,
+      /status.*429/i,
+      /status.*502/i,
+      /status.*503/i,
+      /status.*504/i,
+      // Service availability
+      /service unavailable/i,
+      /overloaded/i,
+      /temporarily unavailable/i
+    ];
+    return transientPatterns.some(pattern => pattern.test(errorMessage));
   }
 
   /**

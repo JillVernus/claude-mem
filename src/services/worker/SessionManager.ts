@@ -81,6 +81,31 @@ export class SessionManager {
         session.project = dbSession.project;
       }
 
+      // PHASE 2 FIX: Refresh claudeResumeSessionId and lastInputTokens from database
+      // This ensures database fixes (e.g., clearing stale resume IDs) take effect
+      // without requiring manual session deletion from worker memory
+      const rolloverState = this.dbManager.getSessionStore().getClaudeRolloverState(sessionDbId);
+      const dbResumeId = rolloverState?.claude_resume_session_id ?? null;
+      const dbLastInputTokens = rolloverState?.last_input_tokens ?? undefined;
+
+      if (session.claudeResumeSessionId !== dbResumeId) {
+        logger.info('SESSION', 'ROLLOVER_STATE_REFRESH | claudeResumeSessionId updated from database', {
+          sessionDbId,
+          oldResumeId: session.claudeResumeSessionId,
+          newResumeId: dbResumeId
+        });
+        session.claudeResumeSessionId = dbResumeId;
+      }
+
+      if (session.lastInputTokens !== dbLastInputTokens) {
+        logger.debug('SESSION', 'ROLLOVER_STATE_REFRESH | lastInputTokens updated from database', {
+          sessionDbId,
+          oldTokens: session.lastInputTokens,
+          newTokens: dbLastInputTokens
+        });
+        session.lastInputTokens = dbLastInputTokens;
+      }
+
       // Update userPrompt for continuation prompts
       if (currentUserPrompt) {
         logger.debug('SESSION', 'Updating userPrompt for continuation', {

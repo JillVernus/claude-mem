@@ -52,8 +52,8 @@ import { DatabaseManager } from './worker/DatabaseManager.js';
 import { SessionManager } from './worker/SessionManager.js';
 import { SSEBroadcaster } from './worker/SSEBroadcaster.js';
 import { SDKAgent } from './worker/SDKAgent.js';
-import { GeminiAgent } from './worker/GeminiAgent.js';
-import { OpenAIAgent } from './worker/OpenAIAgent.js';
+import { GeminiAgent, isGeminiSelected, isGeminiAvailable } from './worker/GeminiAgent.js';
+import { OpenAIAgent, isOpenAISelected, isOpenAIAvailable } from './worker/OpenAIAgent.js';
 import { PaginationHelper } from './worker/PaginationHelper.js';
 import { SettingsManager } from './worker/SettingsManager.js';
 import { SearchManager } from './worker/SearchManager.js';
@@ -352,22 +352,51 @@ export class WorkerService {
   }
 
   /**
-   * Start a session processor
+   * Get the currently selected provider name based on settings
+   */
+  private getSelectedProvider(): 'claude' | 'gemini' | 'openai' {
+    if (isOpenAISelected() && isOpenAIAvailable()) {
+      return 'openai';
+    }
+    return (isGeminiSelected() && isGeminiAvailable()) ? 'gemini' : 'claude';
+  }
+
+  /**
+   * Start a session processor with the specified provider
    */
   private startSessionProcessor(
     session: ReturnType<typeof this.sessionManager.getSession>,
-    source: string
+    source: string,
+    provider?: 'claude' | 'gemini' | 'openai'
   ): void {
     if (!session) return;
 
+    // Use provided provider or detect from settings
+    const selectedProvider = provider ?? this.getSelectedProvider();
     const sid = session.sessionDbId;
-    logger.info('SYSTEM', `Starting generator (${source})`, { sessionId: sid });
+    logger.info('SYSTEM', `Starting generator (${source}) with provider=${selectedProvider}`, { sessionId: sid });
 
-    session.generatorPromise = this.sdkAgent.startSession(session, this)
+    // Select the appropriate agent based on provider
+    let agentPromise: Promise<void>;
+    switch (selectedProvider) {
+      case 'gemini':
+        agentPromise = this.geminiAgent.startSession(session, this);
+        break;
+      case 'openai':
+        agentPromise = this.openAIAgent.startSession(session, this);
+        break;
+      case 'claude':
+      default:
+        agentPromise = this.sdkAgent.startSession(session, this);
+        break;
+    }
+
+    session.generatorPromise = agentPromise
       .catch(error => {
         logger.error('SDK', 'Session generator failed', {
           sessionId: session.sessionDbId,
-          project: session.project
+          project: session.project,
+          provider: selectedProvider
         }, error as Error);
       })
       .finally(() => {

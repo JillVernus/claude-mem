@@ -7,6 +7,7 @@ Categories are ordered by severity (critical fixes first).
 **Upstream Base**: `v9.0.8` (commit `bab8f554`)
 **Last Merge**: 2026-01-26
 **Recent Updates**:
+- `9.0.8-jv.2` (WIP): Stuck Message Recovery Bugfix - terminal error handling, session cache refresh, provider selection fix, periodic recovery
 - `9.0.8-jv.1`: Merged upstream v9.0.8 - **Category C (Zombie Process Cleanup) REMOVED** - upstream now uses ProcessRegistry with PID tracking, which is superior to our pgrep-based approach
 - `9.0.6-jv.8`: Timeout-Based Message Recovery - recover messages stuck from generator failures within current worker lifecycle (5 min timeout + worker_port check)
 - `9.0.6-jv.7`: Stuck Message Recovery - recover orphaned "processing" messages after worker crash using storeInitEpoch
@@ -36,65 +37,66 @@ Categories are ordered by severity (critical fixes first).
 | 4 | M: Context Truncation | Bugfix - prevent runaway context growth for Gemini/OpenAI | 8 | Active |
 | 5 | N: Claude Session Rollover | Bugfix - restart SDK sessions when context grows too large | 6 | Active |
 | 6 | O: Safe Message Processing | Bugfix - claim→process→delete prevents message loss + orphan recovery + timeout recovery | 8 | Active |
-| 7 | E: Empty Search Params Fix | MCP usability - empty search returns results | 2 | Active |
-| 8 | D: MCP Schema Enhancement | MCP usability - visible tool parameters | 1 | Active |
-| 9 | H: Custom API Endpoints | Feature - configurable Gemini/OpenAI endpoints | 9 | Active |
-| 10 | K: Dynamic Model Selection | Feature - URL normalization, model fetching, OpenRouter→OpenAI | 15 | Active |
-| 11 | L: Settings Hot-Reload | Feature - apply settings changes without worker restart | 7 | Active |
-| 12 | I: Folder CLAUDE.md Optimization | Fix - disable by default, no empty files | 3 | Active |
-| 13 | B: Observation Batching | Cost reduction - batch API calls | 5 | ⏸️ ON HOLD |
-| 14 | F: Autonomous Execution Prevention | Safety - block SDK autonomous behavior | 3 | ⏸️ ON HOLD |
-| 15 | G: Fork Configuration | Identity - version and marketplace config | 4 | Active |
+| 7 | Q: Stuck Message Recovery Bugfix | Bugfix - terminal error handling, cache refresh, provider selection, periodic recovery | 4 | 🚧 WIP |
+| 8 | E: Empty Search Params Fix | MCP usability - empty search returns results | 2 | Active |
+| 9 | D: MCP Schema Enhancement | MCP usability - visible tool parameters | 1 | Active |
+| 10 | H: Custom API Endpoints | Feature - configurable Gemini/OpenAI endpoints | 9 | Active |
+| 11 | K: Dynamic Model Selection | Feature - URL normalization, model fetching, OpenRouter→OpenAI | 15 | Active |
+| 12 | L: Settings Hot-Reload | Feature - apply settings changes without worker restart | 7 | Active |
+| 13 | I: Folder CLAUDE.md Optimization | Fix - disable by default, no empty files | 3 | Active |
+| 14 | B: Observation Batching | Cost reduction - batch API calls | 5 | ⏸️ ON HOLD |
+| 15 | F: Autonomous Execution Prevention | Safety - block SDK autonomous behavior | 3 | ⏸️ ON HOLD |
+| 16 | G: Fork Configuration | Identity - version and marketplace config | 4 | Active |
 
 ### Files by Category
 
-| File | P | A | J | M | N | O | E | D | H | K | L | I | B | F | G |
-|------|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
-| `src/services/worker/SDKAgent.ts` | | | | | + | + | | | | | | | + | + | |
-| `src/services/worker/SessionManager.ts` | | | | | + | + | | | | | + | | + | | |
-| `src/services/worker-service.ts` | | | | | | | | | | + | + | | | | |
-| `src/services/worker-types.ts` | | | | | + | + | + | | | | + | + | | | | |
-| `src/services/sqlite/SessionStore.ts` | | | | | | + | | | | | | | | | | |
-| `src/services/sqlite/PendingMessageStore.ts` | | | | | | | + | | | | | | | | | |
-| `src/services/sqlite/transactions.ts` | | | | | | | + | | | | | | | | | |
-| `src/services/queue/SessionQueueProcessor.ts` | | | | | | | + | | | | | | | | | |
-| `src/types/database.ts` | | | | | | + | | | | | | | | | | |
-| `src/shared/worker-utils.ts` | | | + | | | | | | | | | | | | | |
-| `src/services/infrastructure/HealthMonitor.ts` | | | + | | | | | | | | | | | | | |
-| `plugin/scripts/worker-cli.js` | | | + | | | | | | | | | | | | | |
-| `plugin/scripts/smart-install.js` | | | + | | | | | | | | | | | | | |
-| `src/services/worker/BranchManager.ts` | | | + | | | | | | | | | | | | | |
-| `src/services/integrations/CursorHooksInstaller.ts` | | | + | | | | | | | | | | | | | |
-| `src/services/context/ContextBuilder.ts` | | | + | | | | | | | | | | | | | |
-| `src/services/sync/ChromaSync.ts` | | | + | | | | | | | | | | | | | |
-| `src/services/worker/GeminiAgent.ts` | | | | + | + | | + | | | + | + | | | | | |
-| `src/services/worker/OpenAIAgent.ts` | | | | + | + | | + | | | + | + | | | | | |
-| `src/services/worker/SearchManager.ts` | | | | | | | | + | | | | | | | | |
-| `src/services/sqlite/SessionSearch.ts` | | | | | | | | + | | | | | | | | |
-| `src/servers/mcp-server.ts` | | | | | | | | | + | | | | | | | |
-| `src/shared/SettingsDefaultsManager.ts` | | | | | + | + | | | | + | + | | + | + | + | |
-| `src/services/worker/http/routes/SettingsRoutes.ts` | | | | | | | | | | + | + | | | | | |
-| `src/services/worker/http/routes/SessionRoutes.ts` | | + | | | | + | + | | | | + | + | | | | |
-| `src/services/worker/http/middleware.ts` | | | | | | | | | | + | | | | | | |
-| `src/ui/viewer/types.ts` | | | | | | | | | | + | + | | | | | |
-| `src/ui/viewer/constants/settings.ts` | | | | | | | | | | + | + | | | | | |
-| `src/ui/viewer/constants/api.ts` | | | | | | | | | | | + | | | | | |
-| `src/ui/viewer/hooks/useSettings.ts` | | | | | | | | | | + | + | | | | | |
-| `src/ui/viewer/hooks/useModelFetch.ts` | | | | | | | | | | | + | | | | | |
-| `src/ui/viewer/components/ContextSettingsModal.tsx` | | | | | | | | | | + | + | | | | | |
-| `src/utils/url-utils.ts` | | | | | | | | | | | + | | | | | |
-| `src/services/worker/agents/types.ts` | | | | | + | | | | | | + | | | | | |
-| `src/services/worker/agents/FallbackErrorHandler.ts` | | | | | + | | | | | | | | | | | |
-| `src/services/worker/agents/index.ts` | | | | | + | | | | | | | | | | | |
-| `src/services/worker/utils/HistoryTruncation.ts` | | | | | + | | | | | | | | | | | |
-| `src/utils/claude-md-utils.ts` | | | | | | | | | | | | | + | | | |
-| `src/services/worker/agents/ResponseProcessor.ts` | | | | | | | + | | | | | + | + | | | |
-| `src/sdk/prompts.ts` | | | | | | | | | | | | | | + | | |
-| `src/services/worker/settings/SettingsWatcher.ts` | | | | | | | | | | | | + | | | | |
-| `src/cli/handlers/session-init.ts` | | | | | | | | | | | | | | | + | |
-| `package.json` | | | | | | | | | | | | | | | | + |
-| `plugin/package.json` | | | | | | | | | | | | | | | | + |
-| `plugin/.claude-plugin/plugin.json` | | | | | | | | | | | | | | | | + |
+| File | P | A | J | M | N | O | Q | E | D | H | K | L | I | B | F | G |
+|------|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+| `src/services/worker/SDKAgent.ts` | | | | | + | + | + | | | | | | | + | + | |
+| `src/services/worker/SessionManager.ts` | | | | | + | + | + | | | | | + | | + | | |
+| `src/services/worker-service.ts` | | | | | | | + | | | | + | + | | | | |
+| `src/services/worker-types.ts` | | | | | + | + | + | | | | | + | + | | | | |
+| `src/services/sqlite/SessionStore.ts` | | | | | | + | | | | | | | | | | | |
+| `src/services/sqlite/PendingMessageStore.ts` | | | | | | | | + | | | | | | | | | |
+| `src/services/sqlite/transactions.ts` | | | | | | | | + | | | | | | | | | |
+| `src/services/queue/SessionQueueProcessor.ts` | | | | | | | | + | | | | | | | | | |
+| `src/types/database.ts` | | | | | | + | | | | | | | | | | | |
+| `src/shared/worker-utils.ts` | | | + | | | | | | | | | | | | | | |
+| `src/services/infrastructure/HealthMonitor.ts` | | | + | | | | | | | | | | | | | | |
+| `plugin/scripts/worker-cli.js` | | | + | | | | | | | | | | | | | | |
+| `plugin/scripts/smart-install.js` | | | + | | | | | | | | | | | | | | |
+| `src/services/worker/BranchManager.ts` | | | + | | | | | | | | | | | | | | |
+| `src/services/integrations/CursorHooksInstaller.ts` | | | + | | | | | | | | | | | | | | |
+| `src/services/context/ContextBuilder.ts` | | | + | | | | | | | | | | | | | | |
+| `src/services/sync/ChromaSync.ts` | | | + | | | | | | | | | | | | | | |
+| `src/services/worker/GeminiAgent.ts` | | | | + | + | | | + | | | + | + | | | | | |
+| `src/services/worker/OpenAIAgent.ts` | | | | + | + | | | + | | | + | + | | | | | |
+| `src/services/worker/SearchManager.ts` | | | | | | | | | + | | | | | | | | |
+| `src/services/sqlite/SessionSearch.ts` | | | | | | | | | + | | | | | | | | |
+| `src/servers/mcp-server.ts` | | | | | | | | | | + | | | | | | | |
+| `src/shared/SettingsDefaultsManager.ts` | | | | | + | + | | | | | + | + | | + | + | + | |
+| `src/services/worker/http/routes/SettingsRoutes.ts` | | | | | | | | | | | + | + | | | | | |
+| `src/services/worker/http/routes/SessionRoutes.ts` | | + | | | | + | + | + | | | | + | + | | | | |
+| `src/services/worker/http/middleware.ts` | | | | | | | | | | | + | | | | | | |
+| `src/ui/viewer/types.ts` | | | | | | | | | | | + | + | | | | | |
+| `src/ui/viewer/constants/settings.ts` | | | | | | | | | | | + | + | | | | | |
+| `src/ui/viewer/constants/api.ts` | | | | | | | | | | | | + | | | | | |
+| `src/ui/viewer/hooks/useSettings.ts` | | | | | | | | | | | + | + | | | | | |
+| `src/ui/viewer/hooks/useModelFetch.ts` | | | | | | | | | | | | + | | | | | |
+| `src/ui/viewer/components/ContextSettingsModal.tsx` | | | | | | | | | | | + | + | | | | | |
+| `src/utils/url-utils.ts` | | | | | | | | | | | | + | | | | | |
+| `src/services/worker/agents/types.ts` | | | | | + | | | | | | | + | | | | | |
+| `src/services/worker/agents/FallbackErrorHandler.ts` | | | | | + | | | | | | | | | | | | |
+| `src/services/worker/agents/index.ts` | | | | | + | | | | | | | | | | | | |
+| `src/services/worker/utils/HistoryTruncation.ts` | | | | | + | | | | | | | | | | | | |
+| `src/utils/claude-md-utils.ts` | | | | | | | | | | | | | | + | | | |
+| `src/services/worker/agents/ResponseProcessor.ts` | | | | | | | | + | | | | | + | + | | | |
+| `src/sdk/prompts.ts` | | | | | | | | | | | | | | | + | | |
+| `src/services/worker/settings/SettingsWatcher.ts` | | | | | | | | | | | | | + | | | | |
+| `src/cli/handlers/session-init.ts` | | | | | | | | | | | | | | | | + | |
+| `package.json` | | | | | | | | | | | | | | | | | + |
+| `plugin/package.json` | | | | | | | | | | | | | | | | | + |
+| `plugin/.claude-plugin/plugin.json` | | | | | | | | | | | | | | | | | + |
 | `.claude-plugin/marketplace.json` | | | | | | | | | | | | | | | | + |
 | `README.md` | | | | | | | | | | | + | | | | | |
 
@@ -882,6 +884,82 @@ grep -n 'crypto.randomUUID' src/services/worker/GeminiAgent.ts src/services/work
 # After worker restart, new Gemini sessions should show:
 # [SDK] Generated memorySessionId for Gemini session | sessionDbId=X | memorySessionId=UUID
 ```
+
+---
+
+### Category Q: Stuck Message Recovery Bugfix (Priority 7) 🚧 WIP
+
+**Problem**: Sessions can become orphaned with pending messages that are never processed. This occurs due to 5 interacting bugs:
+1. Stale `claude_resume_session_id` prevents recovery (SDK aborts on invalid resume ID)
+2. Session caching doesn't refresh `claudeResumeSessionId` from database
+3. Crash recovery setTimeout lacks error handling
+4. No periodic recovery for orphaned sessions
+5. Recovery uses hardcoded Claude SDK, ignoring `CLAUDE_MEM_PROVIDER`
+
+**Solution**: 4-phase implementation:
+- **Phase 1**: Terminal error detection in SDKAgent.ts - clear stale resume ID on terminal errors
+- **Phase 2**: Refresh session state from database on cache hit
+- **Phase 3**: Add error handling to crash recovery + fix provider selection
+- **Phase 4**: Add periodic orphan recovery
+
+**Files**:
+| File | Change |
+|------|--------|
+| `src/services/worker/SDKAgent.ts` | Terminal error detection with whitelist, clear resume ID (DB + memory), transient error exclusions |
+| `src/services/worker/SessionManager.ts` | Refresh `claudeResumeSessionId` and `lastInputTokens` from DB on cache hit |
+| `src/services/worker/http/routes/SessionRoutes.ts` | Error handling in crash recovery, `recoveryInProgress` flag |
+| `src/services/worker-service.ts` | Fix provider selection in `startSessionProcessor`, add periodic recovery |
+
+**Phase 1 Implementation** (Completed):
+- Terminal error patterns: "aborted by user", "invalid session id", "unknown session", "session timed out", etc.
+- Transient error patterns (word-bounded): network timeouts, rate limits, HTTP 429/502/503/504
+- Only clears resume ID when: resume was attempted + error is terminal + error is not transient + not intentional abort
+- Captures `runAbortController` before query to correctly detect intentional aborts
+
+**Phase 2 Implementation** (Completed):
+- In `initializeSession()`, when returning cached session, refreshes `claudeResumeSessionId` and `lastInputTokens` from database
+- Logs at INFO level when resume ID changes (high-signal event)
+- Logs at DEBUG level when token count changes (frequent event)
+- Ensures database fixes take effect without manual session deletion
+
+**Phase 3 Implementation** (Completed):
+- **Provider Selection Fix** (`worker-service.ts`):
+  - Added `getSelectedProvider()` helper that checks settings and provider availability
+  - Updated `startSessionProcessor()` to accept optional provider parameter
+  - Routes to correct agent: `sdkAgent.startSession()`, `geminiAgent.startSession()`, or `openAIAgent.startSession()`
+  - `processPendingQueues()` now respects `CLAUDE_MEM_PROVIDER` setting
+- **Crash Recovery Hardening** (`SessionRoutes.ts`):
+  - Wrapped setTimeout callback in async IIFE with `.catch()` to prevent unhandled promise rejections
+  - Added per-session `recoveryInProgress` flag to prevent concurrent recovery attempts
+  - Added retry logic (maxRetries=2, 500ms delay) with terminal error detection
+  - On terminal resume error: clears resume ID in both DB and memory, then retries
+  - Always clears `recoveryInProgress` in `finally` block to prevent deadlocks
+  - Graceful degradation: logs error and gives up after max retries instead of throwing
+- **Type Updates** (`worker-types.ts`):
+  - Added `recoveryInProgress?: boolean` field to `ActiveSession` interface
+
+**Verification**:
+```bash
+# Phase 1: Check terminal error handling
+grep -n 'isTerminalResumeError\|isTransientError' src/services/worker/SDKAgent.ts
+
+# Phase 1: Check resume ID clearing
+grep -n 'RESUME_ID_CLEARED_ON_TERMINAL_ERROR' src/services/worker/SDKAgent.ts
+
+# Phase 2: Check cache refresh
+grep -n 'ROLLOVER_STATE_REFRESH' src/services/worker/SessionManager.ts
+
+# Phase 3: Check provider selection
+grep -n 'getSelectedProvider' src/services/worker-service.ts
+
+# Phase 3: Check crash recovery error handling
+grep -n 'recoveryInProgress' src/services/worker/http/routes/SessionRoutes.ts
+
+# Phase 3: Check recoveryInProgress type
+grep -n 'recoveryInProgress' src/services/worker-types.ts
+```
+
+**Plan**: `docs/plans/2026-01-26-stuck-message-recovery-bugfix.md`
 
 ---
 
