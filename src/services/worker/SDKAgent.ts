@@ -8,7 +8,7 @@
  * - Sync to database and Chroma
  */
 
-import { execSync, spawnSync } from 'child_process';
+import { execSync } from 'child_process';
 import { homedir } from 'os';
 import path from 'path';
 import { DatabaseManager } from './DatabaseManager.js';
@@ -20,6 +20,7 @@ import { USER_SETTINGS_PATH } from '../../shared/paths.js';
 import type { ActiveSession, SDKUserMessage } from '../worker-types.js';
 import { ModeManager } from '../domain/ModeManager.js';
 import { processAgentResponse, type WorkerRef } from './agents/index.js';
+import { createPidCapturingSpawn, getProcessBySession, ensureProcessExit } from './ProcessRegistry.js';
 
 // Import Agent SDK (assumes it's installed)
 // @ts-ignore - Agent SDK types may not be available
@@ -127,6 +128,7 @@ export class SDKAgent {
 
     // Run Agent SDK query loop
     // Only resume if we have a captured Claude resume session ID
+    // Use custom spawn to capture PIDs for zombie process cleanup (Issue #737)
     const queryResult = query({
       prompt: messageGenerator,
       options: {
@@ -137,7 +139,9 @@ export class SDKAgent {
         ...(hasClaudeResumeId && session.lastPromptNumber > 1 && { resume: session.claudeResumeSessionId }),
         disallowedTools,
         abortController: session.abortController,
-        pathToClaudeCodeExecutable: claudePath
+        pathToClaudeCodeExecutable: claudePath,
+        // Custom spawn function captures PIDs to fix zombie process accumulation
+        spawnClaudeCodeProcess: createPidCapturingSpawn(session.sessionDbId)
       }
     });
 
@@ -560,71 +564,5 @@ export class SDKAgent {
     const settingsPath = path.join(homedir(), '.claude-mem', 'settings.json');
     const settings = SettingsDefaultsManager.loadFromFile(settingsPath);
     return settings.CLAUDE_MEM_MODEL;
-  }
-
-  /**
-   * Kill orphan subprocesses matching a session's claudeResumeSessionId
-   * This is needed because AbortController.abort() doesn't reliably kill the subprocess
-   * on some Linux environments. Manual cleanup ensures no zombie processes accumulate.
-   *
-   * @param claudeResumeSessionId The Claude SDK session ID used in --resume flag
-   * @returns Number of processes killed
-   */
-  killOrphanSubprocesses(claudeResumeSessionId: string): number {
-    if (!claudeResumeSessionId) {
-      return 0;
-    }
-
-    try {
-      // Find PIDs matching --resume <claudeResumeSessionId>
-      // Use pgrep for portable process matching
-      const pgrepResult = spawnSync('pgrep', ['-f', `--resume ${claudeResumeSessionId}`], {
-        encoding: 'utf8',
-        windowsHide: true
-      });
-
-      if (pgrepResult.status !== 0 || !pgrepResult.stdout?.trim()) {
-        // No matching processes found
-        return 0;
-      }
-
-      const pids = pgrepResult.stdout.trim().split('\n').filter(Boolean);
-      let killedCount = 0;
-
-      for (const pid of pids) {
-        try {
-          // SIGTERM first (graceful)
-          process.kill(parseInt(pid, 10), 'SIGTERM');
-          killedCount++;
-          logger.info('SDK', `SUBPROCESS_KILLED | pid=${pid} | claudeResumeSessionId=${claudeResumeSessionId}`, {
-            pid,
-            claudeResumeSessionId,
-            signal: 'SIGTERM'
-          });
-        } catch (killError: any) {
-          // Process may have already exited
-          if (killError.code !== 'ESRCH') {
-            logger.warn('SDK', `Failed to kill subprocess ${pid}`, {
-              pid,
-              claudeResumeSessionId,
-              error: killError.message
-            });
-          }
-        }
-      }
-
-      if (killedCount > 0) {
-        logger.info('SDK', `ORPHAN_CLEANUP | killed=${killedCount} | claudeResumeSessionId=${claudeResumeSessionId}`, {
-          claudeResumeSessionId,
-          killedCount,
-          pids: pids.join(',')
-        });
-      }
-
-      return killedCount;
-    } catch (error) {
-      logger.debug('SDK', 'Error during orphan subprocess cleanup', { claudeResumeSessionId }, error as Error);
-      return 0;
-    }
   }
 }

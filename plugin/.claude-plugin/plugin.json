@@ -1,7 +1,7 @@
 {
   "name": "claude-mem",
-  "version": "9.0.6-jv.11",
-  "description": "Persistent memory system for Claude Code - with observation batching",
+  "version": "9.0.8-jv.1",
+  "description": "Persistent memory system for Claude Code - seamlessly preserve context across sessions",
   "author": {
     "name": "JillVernus (fork of thedotmack/claude-mem)"
   },
@@ -12,7 +12,6 @@
     "context",
     "persistence",
     "hooks",
-    "mcp",
-    "batching"
+    "mcp"
   ]
 }

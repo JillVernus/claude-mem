@@ -3,10 +3,11 @@
 This document is a step-by-step guide for merging upstream releases into the JillVernus fork.
 Categories are ordered by severity (critical fixes first).
 
-**Current Fork Version**: `9.0.6-jv.8`
-**Upstream Base**: `v9.0.6` (commit `c29d91a9`)
-**Last Merge**: 2026-01-23
+**Current Fork Version**: `9.0.8-jv.1`
+**Upstream Base**: `v9.0.8` (commit `bab8f554`)
+**Last Merge**: 2026-01-26
 **Recent Updates**:
+- `9.0.8-jv.1`: Merged upstream v9.0.8 - **Category C (Zombie Process Cleanup) REMOVED** - upstream now uses ProcessRegistry with PID tracking, which is superior to our pgrep-based approach
 - `9.0.6-jv.8`: Timeout-Based Message Recovery - recover messages stuck from generator failures within current worker lifecycle (5 min timeout + worker_port check)
 - `9.0.6-jv.7`: Stuck Message Recovery - recover orphaned "processing" messages after worker crash using storeInitEpoch
 - `9.0.6-jv.6`: Memory Leak Fix - clear conversationHistory on Claude rollover to prevent unbounded growth
@@ -28,30 +29,30 @@ Categories are ordered by severity (critical fixes first).
 
 | Priority | Category | Purpose | Files | Status |
 |----------|----------|---------|-------|--------|
-| 1 | C: Zombie Process Cleanup | Memory leak fix - orphan SDK processes | 3 | Active |
-| 2 | P: ConversationHistory Memory Leak | Memory leak fix - clear history on rollover | 1 | Active |
-| 3 | A: Dynamic Path Resolution | Crash fix - hardcoded `thedotmack` paths | 2 | Active |
-| 4 | J: Gemini/OpenAI memorySessionId | Bugfix - non-Claude providers crash without UUID | 2 | Active |
-| 5 | M: Context Truncation | Bugfix - prevent runaway context growth for Gemini/OpenAI | 8 | Active |
-| 6 | N: Claude Session Rollover | Bugfix - restart SDK sessions when context grows too large | 6 | Active |
-| 7 | O: Safe Message Processing | Bugfix - claim→process→delete prevents message loss + orphan recovery + timeout recovery | 8 | Active |
-| 8 | E: Empty Search Params Fix | MCP usability - empty search returns results | 2 | Active |
-| 9 | D: MCP Schema Enhancement | MCP usability - visible tool parameters | 1 | Active |
-| 10 | H: Custom API Endpoints | Feature - configurable Gemini/OpenAI endpoints | 9 | Active |
-| 11 | K: Dynamic Model Selection | Feature - URL normalization, model fetching, OpenRouter→OpenAI | 15 | Active |
-| 12 | L: Settings Hot-Reload | Feature - apply settings changes without worker restart | 7 | Active |
-| 13 | I: Folder CLAUDE.md Optimization | Fix - disable by default, no empty files | 3 | Active |
-| 14 | B: Observation Batching | Cost reduction - batch API calls | 5 | ⏸️ ON HOLD |
-| 15 | F: Autonomous Execution Prevention | Safety - block SDK autonomous behavior | 3 | ⏸️ ON HOLD |
-| 16 | G: Fork Configuration | Identity - version and marketplace config | 4 | Active |
+| ~~1~~ | ~~C: Zombie Process Cleanup~~ | ~~Memory leak fix - orphan SDK processes~~ | ~~3~~ | ✅ **UPSTREAM** (v9.0.8) |
+| 1 | P: ConversationHistory Memory Leak | Memory leak fix - clear history on rollover | 1 | Active |
+| 2 | A: Dynamic Path Resolution | Crash fix - hardcoded `thedotmack` paths | 2 | Active |
+| 3 | J: Gemini/OpenAI memorySessionId | Bugfix - non-Claude providers crash without UUID | 2 | Active |
+| 4 | M: Context Truncation | Bugfix - prevent runaway context growth for Gemini/OpenAI | 8 | Active |
+| 5 | N: Claude Session Rollover | Bugfix - restart SDK sessions when context grows too large | 6 | Active |
+| 6 | O: Safe Message Processing | Bugfix - claim→process→delete prevents message loss + orphan recovery + timeout recovery | 8 | Active |
+| 7 | E: Empty Search Params Fix | MCP usability - empty search returns results | 2 | Active |
+| 8 | D: MCP Schema Enhancement | MCP usability - visible tool parameters | 1 | Active |
+| 9 | H: Custom API Endpoints | Feature - configurable Gemini/OpenAI endpoints | 9 | Active |
+| 10 | K: Dynamic Model Selection | Feature - URL normalization, model fetching, OpenRouter→OpenAI | 15 | Active |
+| 11 | L: Settings Hot-Reload | Feature - apply settings changes without worker restart | 7 | Active |
+| 12 | I: Folder CLAUDE.md Optimization | Fix - disable by default, no empty files | 3 | Active |
+| 13 | B: Observation Batching | Cost reduction - batch API calls | 5 | ⏸️ ON HOLD |
+| 14 | F: Autonomous Execution Prevention | Safety - block SDK autonomous behavior | 3 | ⏸️ ON HOLD |
+| 15 | G: Fork Configuration | Identity - version and marketplace config | 4 | Active |
 
 ### Files by Category
 
-| File | C | P | A | J | M | N | O | E | D | H | K | L | I | B | F | G |
-|------|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
-| `src/services/worker/SDKAgent.ts` | + | | | | | + | + | | | | | | | + | + | |
-| `src/services/worker/SessionManager.ts` | + | | | | | + | + | | | | | + | | + | | |
-| `src/services/worker-service.ts` | + | | | | | | | | | | + | + | | | | |
+| File | P | A | J | M | N | O | E | D | H | K | L | I | B | F | G |
+|------|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+| `src/services/worker/SDKAgent.ts` | | | | | + | + | | | | | | | + | + | |
+| `src/services/worker/SessionManager.ts` | | | | | + | + | | | | | + | | + | | |
+| `src/services/worker-service.ts` | | | | | | | | | | + | + | | | | |
 | `src/services/worker-types.ts` | | | | | + | + | + | | | | + | + | | | | |
 | `src/services/sqlite/SessionStore.ts` | | | | | | + | | | | | | | | | | |
 | `src/services/sqlite/PendingMessageStore.ts` | | | | | | | + | | | | | | | | | |

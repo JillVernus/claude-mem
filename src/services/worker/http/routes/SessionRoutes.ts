@@ -20,6 +20,7 @@ import { SessionEventBroadcaster } from '../../events/SessionEventBroadcaster.js
 import { SessionCompletionHandler } from '../../session/SessionCompletionHandler.js';
 import { PrivacyCheckValidator } from '../../validation/PrivacyCheckValidator.js';
 import { SettingsDefaultsManager } from '../../../../shared/SettingsDefaultsManager.js';
+import { getProcessBySession, ensureProcessExit } from '../../ProcessRegistry.js';
 import { USER_SETTINGS_PATH } from '../../../../shared/paths.js';
 
 export class SessionRoutes extends BaseRouteHandler {
@@ -89,7 +90,7 @@ export class SessionRoutes extends BaseRouteHandler {
    * we let the current generator finish naturally (max 5s linger timeout).
    * The next generator will use the new provider with shared conversationHistory.
    */
-  private ensureGeneratorRunning(sessionDbId: number, source: string): void {
+  private async ensureGeneratorRunning(sessionDbId: number, source: string): Promise<void> {
     const session = this.sessionManager.getSession(sessionDbId);
     if (!session) return;
 
@@ -97,7 +98,7 @@ export class SessionRoutes extends BaseRouteHandler {
 
     // Start generator if not running
     if (!session.generatorPromise) {
-      this.startGeneratorWithProvider(session, selectedProvider, source);
+      await this.startGeneratorWithProvider(session, selectedProvider, source);
       return;
     }
 
@@ -118,11 +119,11 @@ export class SessionRoutes extends BaseRouteHandler {
    * Start a generator with the specified provider
    * Includes generator identity tracking for safe hot-reload restarts
    */
-  private startGeneratorWithProvider(
+  private async startGeneratorWithProvider(
     session: ReturnType<typeof this.sessionManager.getSession>,
     provider: 'claude' | 'gemini' | 'openai',
     source: string
-  ): void {
+  ): Promise<void> {
     if (!session) return;
 
     const agent = provider === 'openai' ? this.openAIAgent : (provider === 'gemini' ? this.geminiAgent : this.sdkAgent);
@@ -184,18 +185,16 @@ export class SessionRoutes extends BaseRouteHandler {
       }
     }
 
-    // CRITICAL: Kill orphan subprocesses BEFORE starting new generator
-    // This prevents zombie process accumulation when AbortController.abort() fails to kill
-    // Use claudeResumeSessionId (the actual SDK session_id used for --resume)
-    // On rollover, use the saved previousResumeIdForCleanup since we just cleared claudeResumeSessionId
-    const resumeIdForCleanup = previousResumeIdForCleanup ?? session.claudeResumeSessionId;
-    if (resumeIdForCleanup && provider === 'claude') {
-      const killed = this.sdkAgent.killOrphanSubprocesses(resumeIdForCleanup);
-      if (killed > 0) {
-        logger.info('SESSION', `Killed ${killed} orphan subprocess(es) before starting new generator`, {
+    // Ensure previous subprocess has exited before starting new generator (Issue #737)
+    // This uses ProcessRegistry's PID tracking instead of pgrep scanning
+    if (provider === 'claude') {
+      const tracked = getProcessBySession(session.sessionDbId);
+      if (tracked && !tracked.process.killed && tracked.process.exitCode === null) {
+        logger.info('SESSION', `Waiting for previous subprocess to exit before starting new generator`, {
           sessionId: session.sessionDbId,
-          claudeResumeSessionId: resumeIdForCleanup
+          pid: tracked.pid
         });
+        await ensureProcessExit(tracked, 5000);
       }
     }
 
@@ -324,10 +323,10 @@ export class SessionRoutes extends BaseRouteHandler {
               oldController.abort();
 
               // Small delay before restart
-              setTimeout(() => {
+              setTimeout(async () => {
                 const stillExists = this.sessionManager.getSession(sessionDbId);
                 if (stillExists && !stillExists.generatorPromise) {
-                  this.startGeneratorWithProvider(stillExists, this.getSelectedProvider(), 'crash-recovery');
+                  await this.startGeneratorWithProvider(stillExists, this.getSelectedProvider(), 'crash-recovery');
                 } else if (stillExists?.generatorPromise) {
                   logger.warn('SESSION', `DIAGNOSTIC: Skipped restart - generator already running`, {
                     sessionId: sessionDbId
@@ -491,7 +490,7 @@ export class SessionRoutes extends BaseRouteHandler {
       }
 
       // Step 4: Start new generator with updated settings
-      this.startGeneratorWithProvider(currentSession, this.getSelectedProvider(), `hot-reload:${reason}`);
+      await this.startGeneratorWithProvider(currentSession, this.getSelectedProvider(), `hot-reload:${reason}`);
 
       // ONLY clear pendingRestart AFTER successful start
       currentSession.pendingRestart = null;
@@ -590,7 +589,7 @@ export class SessionRoutes extends BaseRouteHandler {
    * Queue observations for processing
    * CRITICAL: Ensures SDK agent is running to process the queue (ALWAYS SAVE EVERYTHING)
    */
-  private handleObservations = this.wrapHandler((req: Request, res: Response): void => {
+  private handleObservations = this.wrapHandler(async (req: Request, res: Response): Promise<void> => {
     const sessionDbId = this.parseIntParam(req, res, 'sessionDbId');
     if (sessionDbId === null) return;
 
@@ -605,7 +604,7 @@ export class SessionRoutes extends BaseRouteHandler {
     });
 
     // CRITICAL: Ensure SDK agent is running to consume the queue
-    this.ensureGeneratorRunning(sessionDbId, 'observation');
+    await this.ensureGeneratorRunning(sessionDbId, 'observation');
 
     // Broadcast observation queued event
     this.eventBroadcaster.broadcastObservationQueued(sessionDbId);
@@ -617,7 +616,7 @@ export class SessionRoutes extends BaseRouteHandler {
    * Queue summarize request
    * CRITICAL: Ensures SDK agent is running to process the queue (ALWAYS SAVE EVERYTHING)
    */
-  private handleSummarize = this.wrapHandler((req: Request, res: Response): void => {
+  private handleSummarize = this.wrapHandler(async (req: Request, res: Response): Promise<void> => {
     const sessionDbId = this.parseIntParam(req, res, 'sessionDbId');
     if (sessionDbId === null) return;
 
@@ -626,7 +625,7 @@ export class SessionRoutes extends BaseRouteHandler {
     this.sessionManager.queueSummarize(sessionDbId, last_assistant_message);
 
     // CRITICAL: Ensure SDK agent is running to consume the queue
-    this.ensureGeneratorRunning(sessionDbId, 'summarize');
+    await this.ensureGeneratorRunning(sessionDbId, 'summarize');
 
     // Broadcast summarize queued event
     this.eventBroadcaster.broadcastSummarizeQueued();
@@ -687,7 +686,7 @@ export class SessionRoutes extends BaseRouteHandler {
    * POST /api/sessions/observations
    * Body: { contentSessionId, tool_name, tool_input, tool_response, cwd }
    */
-  private handleObservationsByClaudeId = this.wrapHandler((req: Request, res: Response): void => {
+  private handleObservationsByClaudeId = this.wrapHandler(async (req: Request, res: Response): Promise<void> => {
     const { contentSessionId, tool_name, tool_input, tool_response, cwd } = req.body;
 
     if (!contentSessionId) {
@@ -764,7 +763,7 @@ export class SessionRoutes extends BaseRouteHandler {
     });
 
     // Ensure SDK agent is running
-    this.ensureGeneratorRunning(sessionDbId, 'observation');
+    await this.ensureGeneratorRunning(sessionDbId, 'observation');
 
     // Broadcast observation queued event
     this.eventBroadcaster.broadcastObservationQueued(sessionDbId);
@@ -779,7 +778,7 @@ export class SessionRoutes extends BaseRouteHandler {
    *
    * Checks privacy, queues summarize request for SDK agent
    */
-  private handleSummarizeByClaudeId = this.wrapHandler((req: Request, res: Response): void => {
+  private handleSummarizeByClaudeId = this.wrapHandler(async (req: Request, res: Response): Promise<void> => {
     const { contentSessionId, last_assistant_message } = req.body;
 
     if (!contentSessionId) {
@@ -813,7 +812,7 @@ export class SessionRoutes extends BaseRouteHandler {
     this.sessionManager.queueSummarize(sessionDbId, last_assistant_message);
 
     // Ensure SDK agent is running
-    this.ensureGeneratorRunning(sessionDbId, 'summarize');
+    await this.ensureGeneratorRunning(sessionDbId, 'summarize');
 
     // Broadcast summarize queued event
     this.eventBroadcaster.broadcastSummarizeQueued();

@@ -16,13 +16,13 @@ import { PendingMessageStore } from '../sqlite/PendingMessageStore.js';
 import { SessionQueueProcessor } from '../queue/SessionQueueProcessor.js';
 import { SettingsDefaultsManager } from '../../shared/SettingsDefaultsManager.js';
 import { USER_SETTINGS_PATH } from '../../shared/paths.js';
+import { getProcessBySession, ensureProcessExit } from './ProcessRegistry.js';
 
 export class SessionManager {
   private dbManager: DatabaseManager;
   private sessions: Map<number, ActiveSession> = new Map();
   private sessionQueues: Map<number, EventEmitter> = new Map();
   private onSessionDeletedCallback?: () => void;
-  private onKillOrphanSubprocesses?: (memorySessionId: string) => number;
   private pendingStore: PendingMessageStore | null = null;
   // Batching: idle timers per session (cleaned up on session delete)
   private idleTimers: Map<number, ReturnType<typeof setTimeout>> = new Map(); // Keep for clearIdleTimer compatibility
@@ -47,13 +47,6 @@ export class SessionManager {
    */
   setOnSessionDeleted(callback: () => void): void {
     this.onSessionDeletedCallback = callback;
-  }
-
-  /**
-   * Set callback to kill orphan subprocesses (injected by WorkerService to avoid circular deps)
-   */
-  setOnKillOrphanSubprocesses(callback: (memorySessionId: string) => number): void {
-    this.onKillOrphanSubprocesses = callback;
   }
 
   /**
@@ -290,6 +283,7 @@ export class SessionManager {
 
   /**
    * Delete a session (abort SDK agent and cleanup)
+   * Verifies subprocess exit to prevent zombie process accumulation (Issue #737)
    */
   async deleteSession(sessionDbId: number): Promise<void> {
     const session = this.sessions.get(sessionDbId);
@@ -299,30 +293,27 @@ export class SessionManager {
 
     const sessionDuration = Date.now() - session.startTime;
 
-    // Abort the SDK agent
+    // 1. Abort the SDK agent
     session.abortController.abort();
 
-    // CRITICAL: Kill orphan subprocesses that abort() may not have killed
-    // This prevents zombie process accumulation on Linux
-    // Use claudeResumeSessionId (the actual SDK session_id used for --resume)
-    if (session.claudeResumeSessionId && this.onKillOrphanSubprocesses) {
-      const killed = this.onKillOrphanSubprocesses(session.claudeResumeSessionId);
-      if (killed > 0) {
-        logger.info('SESSION', `Killed ${killed} orphan subprocess(es) on session delete`, {
-          sessionId: sessionDbId,
-          claudeResumeSessionId: session.claudeResumeSessionId
-        });
-      }
-    }
-
-    // Wait for generator to finish
+    // 2. Wait for generator to finish
     if (session.generatorPromise) {
-      await session.generatorPromise.catch(error => {
+      await session.generatorPromise.catch(() => {
         logger.debug('SYSTEM', 'Generator already failed, cleaning up', { sessionId: session.sessionDbId });
       });
     }
 
-    // Cleanup
+    // 3. Verify subprocess exit with 5s timeout (Issue #737 fix)
+    const tracked = getProcessBySession(sessionDbId);
+    if (tracked && !tracked.process.killed && tracked.process.exitCode === null) {
+      logger.debug('SESSION', `Waiting for subprocess PID ${tracked.pid} to exit`, {
+        sessionId: sessionDbId,
+        pid: tracked.pid
+      });
+      await ensureProcessExit(tracked, 5000);
+    }
+
+    // 4. Cleanup
     this.sessions.delete(sessionDbId);
     this.sessionQueues.delete(sessionDbId);
     this.clearIdleTimer(sessionDbId);  // Clean up batching timer
