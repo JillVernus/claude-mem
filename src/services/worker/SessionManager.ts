@@ -239,6 +239,12 @@ export class SessionManager {
         sessionId: sessionDbId
       });
 
+      // Cancel idle cleanup timer if set - new work has arrived
+      if (session.idleCleanupTimer) {
+        clearTimeout(session.idleCleanupTimer);
+        session.idleCleanupTimer = null;
+      }
+
       // Batching logic: check settings to decide immediate vs batched processing
       const settings = SettingsDefaultsManager.loadFromFile(USER_SETTINGS_PATH);
       const batchingEnabled = settings.CLAUDE_MEM_BATCHING_ENABLED === 'true';
@@ -295,6 +301,12 @@ export class SessionManager {
       logger.info('QUEUE', `ENQUEUED | sessionDbId=${sessionDbId} | messageId=${messageId} | type=summarize | depth=${queueDepth}`, {
         sessionId: sessionDbId
       });
+
+      // Cancel idle cleanup timer if set - new work has arrived
+      if (session.idleCleanupTimer) {
+        clearTimeout(session.idleCleanupTimer);
+        session.idleCleanupTimer = null;
+      }
     } catch (error) {
       logger.error('SESSION', 'Failed to persist summarize to DB', {
         sessionId: sessionDbId
@@ -342,6 +354,12 @@ export class SessionManager {
     this.sessions.delete(sessionDbId);
     this.sessionQueues.delete(sessionDbId);
     this.clearIdleTimer(sessionDbId);  // Clean up batching timer
+
+    // Clear idle cleanup timer if set
+    if (session.idleCleanupTimer) {
+      clearTimeout(session.idleCleanupTimer);
+      session.idleCleanupTimer = null;
+    }
 
     logger.info('SESSION', 'Session deleted', {
       sessionId: sessionDbId,
@@ -714,8 +732,12 @@ export class SessionManager {
       return;
     }
 
+    // Stagger delay between restarts to prevent API flood (2 seconds between each)
+    const RESTART_STAGGER_MS = 2000;
+
     let markedCount = 0;
     let immediateCount = 0;
+    let staggeredCount = 0;
 
     for (const sessionDbId of sessionIds) {
       const session = this.sessions.get(sessionDbId);
@@ -737,16 +759,45 @@ export class SessionManager {
       };
       markedCount++;
 
-      // CRITICAL: If session is already safe to restart, trigger immediately
-      // This handles the case where generator is already idle when settings change
+      // CRITICAL: If session is already safe to restart, schedule with staggered delay
+      // This prevents API flood when multiple sessions are idle at once
       if (this.isGeneratorSafeToRestart(sessionDbId)) {
-        logger.info('SETTINGS', `Session already safe - triggering immediate restart`, {
-          sessionId: sessionDbId,
-          reason
-        });
-        const emitter = this.sessionQueues.get(sessionDbId);
-        emitter?.emit('pending-restart', sessionDbId, reason);
-        immediateCount++;
+        const staggerDelay = staggeredCount * RESTART_STAGGER_MS;
+        staggeredCount++;
+
+        if (staggerDelay === 0) {
+          // First one starts immediately
+          logger.info('SETTINGS', `Session already safe - triggering immediate restart`, {
+            sessionId: sessionDbId,
+            reason
+          });
+          const emitter = this.sessionQueues.get(sessionDbId);
+          emitter?.emit('pending-restart', sessionDbId, reason);
+          immediateCount++;
+        } else {
+          // Subsequent ones are staggered
+          logger.info('SETTINGS', `Session safe - scheduling staggered restart`, {
+            sessionId: sessionDbId,
+            reason,
+            delayMs: staggerDelay
+          });
+          setTimeout(() => {
+            // Re-check if session still exists and still needs restart
+            const currentSession = this.sessions.get(sessionDbId);
+            if (currentSession?.pendingRestart && this.isGeneratorSafeToRestart(sessionDbId)) {
+              logger.info('SETTINGS', `Triggering staggered restart`, {
+                sessionId: sessionDbId,
+                reason
+              });
+              const emitter = this.sessionQueues.get(sessionDbId);
+              emitter?.emit('pending-restart', sessionDbId, reason);
+            } else {
+              logger.debug('SETTINGS', `Skipping staggered restart - session state changed`, {
+                sessionId: sessionDbId
+              });
+            }
+          }, staggerDelay);
+        }
       } else {
         logger.debug('SETTINGS', `Marked session for restart (will trigger when idle)`, {
           sessionId: sessionDbId,
@@ -761,7 +812,8 @@ export class SessionManager {
         reason,
         totalSessions: sessionIds.length,
         markedForRestart: markedCount,
-        immediateRestarts: immediateCount
+        immediateRestarts: immediateCount,
+        staggeredRestarts: staggeredCount - (immediateCount > 0 ? 1 : 0)
       });
     } else {
       logger.debug('SETTINGS', 'No sessions with running generators to restart', {

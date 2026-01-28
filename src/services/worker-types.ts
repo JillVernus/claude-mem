@@ -55,6 +55,13 @@ export interface ActiveSession {
    * Set true when crash recovery starts, cleared in finally block.
    */
   recoveryInProgress?: boolean;
+  /**
+   * Timer for idle session cleanup.
+   * When generator finishes with no pending work, starts a timer.
+   * If no new work arrives before timeout, session is cleaned up.
+   * This prevents orphaned sessions from accumulating in memory.
+   */
+  idleCleanupTimer?: ReturnType<typeof setTimeout> | null;
 }
 
 export interface PendingMessage {

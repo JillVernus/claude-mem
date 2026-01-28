@@ -410,6 +410,38 @@ export class SessionRoutes extends BaseRouteHandler {
                 generatorId
               });
               session.abortController.abort();
+
+              // Start idle cleanup timer - if no new work arrives, clean up session
+              // This prevents orphaned sessions from accumulating when Claude Code exits
+              const IDLE_CLEANUP_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+
+              // Clear any existing timer first
+              if (session.idleCleanupTimer) {
+                clearTimeout(session.idleCleanupTimer);
+              }
+
+              session.idleCleanupTimer = setTimeout(() => {
+                const currentSession = this.sessionManager.getSession(sessionDbId);
+                if (!currentSession) return; // Already cleaned up
+
+                // Only cleanup if still idle (no generator, no pending work)
+                if (!currentSession.generatorPromise) {
+                  const pendingStore = this.sessionManager.getPendingMessageStore();
+                  const currentPendingCount = pendingStore.getPendingCount(sessionDbId);
+
+                  if (currentPendingCount === 0) {
+                    logger.info('SESSION', `Cleaning up idle session after timeout`, {
+                      sessionId: sessionDbId,
+                      idleMinutes: IDLE_CLEANUP_TIMEOUT_MS / 60000
+                    });
+                    this.sessionManager.deleteSession(sessionDbId).catch(err => {
+                      logger.error('SESSION', `Failed to cleanup idle session`, {
+                        sessionId: sessionDbId
+                      }, err as Error);
+                    });
+                  }
+                }
+              }, IDLE_CLEANUP_TIMEOUT_MS);
             }
           } catch (e) {
             // Ignore errors during recovery check, but still abort to prevent leaks

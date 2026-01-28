@@ -3,10 +3,11 @@
 This document is a step-by-step guide for merging upstream releases into the JillVernus fork.
 Categories are ordered by severity (critical fixes first).
 
-**Current Fork Version**: `9.0.8-jv.3`
+**Current Fork Version**: `9.0.8-jv.4`
 **Upstream Base**: `v9.0.8` (commit `bab8f554`)
 **Last Merge**: 2026-01-26
 **Recent Updates**:
+- `9.0.8-jv.4`: Provider Switch API Flood Fix - staggered session restarts + idle session cleanup timer prevents orphaned sessions
 - `9.0.8-jv.3`: Stuck Message Recovery Bugfix Phase 4 - periodic orphan recovery with configurable interval + jitter
 - `9.0.8-jv.2`: Stuck Message Recovery Bugfix Phases 1-3 - terminal error handling, session cache refresh, provider selection fix, crash recovery hardening
 - `9.0.8-jv.1`: Merged upstream v9.0.8 - **Category C (Zombie Process Cleanup) REMOVED** - upstream now uses ProcessRegistry with PID tracking, which is superior to our pgrep-based approach
@@ -39,7 +40,8 @@ Categories are ordered by severity (critical fixes first).
 | 5 | N: Claude Session Rollover | Bugfix - restart SDK sessions when context grows too large | 6 | Active |
 | 6 | O: Safe Message Processing | Bugfix - claim→process→delete prevents message loss + orphan recovery + timeout recovery | 8 | Active |
 | 7 | Q: Stuck Message Recovery Bugfix | Bugfix - terminal error handling, cache refresh, provider selection, periodic recovery | 5 | Active |
-| 8 | E: Empty Search Params Fix | MCP usability - empty search returns results | 2 | Active |
+| 8 | R: Idle Session Cleanup | Bugfix - staggered restarts + cleanup orphaned sessions after idle timeout | 3 | Active |
+| 9 | E: Empty Search Params Fix | MCP usability - empty search returns results | 2 | Active |
 | 9 | D: MCP Schema Enhancement | MCP usability - visible tool parameters | 1 | Active |
 | 10 | H: Custom API Endpoints | Feature - configurable Gemini/OpenAI endpoints | 9 | Active |
 | 11 | K: Dynamic Model Selection | Feature - URL normalization, model fetching, OpenRouter→OpenAI | 15 | Active |
@@ -51,16 +53,16 @@ Categories are ordered by severity (critical fixes first).
 
 ### Files by Category
 
-| File | P | A | J | M | N | O | Q | E | D | H | K | L | I | B | F | G |
-|------|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
-| `src/services/worker/SDKAgent.ts` | | | | | + | + | + | | | | | | | + | + | |
-| `src/services/worker/SessionManager.ts` | | | | | + | + | + | | | | | + | | + | | |
-| `src/services/worker-service.ts` | | | | | | | + | | | | + | + | | | | |
-| `src/services/worker-types.ts` | | | | | + | + | + | | | | | + | + | | | | |
+| File | P | A | J | M | N | O | Q | R | E | D | H | K | L | I | B | F | G |
+|------|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+| `src/services/worker/SDKAgent.ts` | | | | | + | + | + | | | | | | | | + | + | |
+| `src/services/worker/SessionManager.ts` | | | | | + | + | + | + | | | | | + | | + | | |
+| `src/services/worker-service.ts` | | | | | | | + | | | | | + | + | | | | |
+| `src/services/worker-types.ts` | | | | | + | + | + | + | | | | | + | + | | | | |
 | `src/services/sqlite/SessionStore.ts` | | | | | | + | | | | | | | | | | | |
-| `src/services/sqlite/PendingMessageStore.ts` | | | | | | | | + | | | | | | | | | |
-| `src/services/sqlite/transactions.ts` | | | | | | | | + | | | | | | | | | |
-| `src/services/queue/SessionQueueProcessor.ts` | | | | | | | | + | | | | | | | | | |
+| `src/services/sqlite/PendingMessageStore.ts` | | | | | | | | | + | | | | | | | | |
+| `src/services/sqlite/transactions.ts` | | | | | | | | | + | | | | | | | | |
+| `src/services/queue/SessionQueueProcessor.ts` | | | | | | | | | + | | | | | | | | |
 | `src/types/database.ts` | | | | | | + | | | | | | | | | | | |
 | `src/shared/worker-utils.ts` | | | + | | | | | | | | | | | | | | |
 | `src/services/infrastructure/HealthMonitor.ts` | | | + | | | | | | | | | | | | | | |
@@ -70,36 +72,36 @@ Categories are ordered by severity (critical fixes first).
 | `src/services/integrations/CursorHooksInstaller.ts` | | | + | | | | | | | | | | | | | | |
 | `src/services/context/ContextBuilder.ts` | | | + | | | | | | | | | | | | | | |
 | `src/services/sync/ChromaSync.ts` | | | + | | | | | | | | | | | | | | |
-| `src/services/worker/GeminiAgent.ts` | | | | + | + | | | + | | | + | + | | | | | |
-| `src/services/worker/OpenAIAgent.ts` | | | | + | + | | | + | | | + | + | | | | | |
-| `src/services/worker/SearchManager.ts` | | | | | | | | | + | | | | | | | | |
-| `src/services/sqlite/SessionSearch.ts` | | | | | | | | | + | | | | | | | | |
-| `src/servers/mcp-server.ts` | | | | | | | | | | + | | | | | | | |
-| `src/shared/SettingsDefaultsManager.ts` | | | | | + | + | + | | | | + | + | | + | + | + | |
-| `src/services/worker/http/routes/SettingsRoutes.ts` | | | | | | | | | | | + | + | | | | | |
-| `src/services/worker/http/routes/SessionRoutes.ts` | | + | | | | + | + | + | | | | + | + | | | | |
-| `src/services/worker/http/middleware.ts` | | | | | | | | | | | + | | | | | | |
-| `src/ui/viewer/types.ts` | | | | | | | | | | | + | + | | | | | |
-| `src/ui/viewer/constants/settings.ts` | | | | | | | | | | | + | + | | | | | |
-| `src/ui/viewer/constants/api.ts` | | | | | | | | | | | | + | | | | | |
-| `src/ui/viewer/hooks/useSettings.ts` | | | | | | | | | | | + | + | | | | | |
-| `src/ui/viewer/hooks/useModelFetch.ts` | | | | | | | | | | | | + | | | | | |
-| `src/ui/viewer/components/ContextSettingsModal.tsx` | | | | | | | | | | | + | + | | | | | |
-| `src/utils/url-utils.ts` | | | | | | | | | | | | + | | | | | |
-| `src/services/worker/agents/types.ts` | | | | | + | | | | | | | + | | | | | |
-| `src/services/worker/agents/FallbackErrorHandler.ts` | | | | | + | | | | | | | | | | | | |
-| `src/services/worker/agents/index.ts` | | | | | + | | | | | | | | | | | | |
-| `src/services/worker/utils/HistoryTruncation.ts` | | | | | + | | | | | | | | | | | | |
-| `src/utils/claude-md-utils.ts` | | | | | | | | | | | | | | + | | | |
-| `src/services/worker/agents/ResponseProcessor.ts` | | | | | | | | + | | | | | + | + | | | |
-| `src/sdk/prompts.ts` | | | | | | | | | | | | | | | + | | |
-| `src/services/worker/settings/SettingsWatcher.ts` | | | | | | | | | | | | | + | | | | |
-| `src/cli/handlers/session-init.ts` | | | | | | | | | | | | | | | | + | |
-| `package.json` | | | | | | | | | | | | | | | | | + |
-| `plugin/package.json` | | | | | | | | | | | | | | | | | + |
-| `plugin/.claude-plugin/plugin.json` | | | | | | | | | | | | | | | | | + |
-| `.claude-plugin/marketplace.json` | | | | | | | | | | | | | | | | + |
-| `README.md` | | | | | | | | | | | + | | | | | |
+| `src/services/worker/GeminiAgent.ts` | | | | + | + | | | | + | | | + | + | | | | | |
+| `src/services/worker/OpenAIAgent.ts` | | | | + | + | | | | + | | | + | + | | | | | |
+| `src/services/worker/SearchManager.ts` | | | | | | | | | | + | | | | | | | | |
+| `src/services/sqlite/SessionSearch.ts` | | | | | | | | | | + | | | | | | | | |
+| `src/servers/mcp-server.ts` | | | | | | | | | | | + | | | | | | | |
+| `src/shared/SettingsDefaultsManager.ts` | | | | | + | + | + | | | | | + | + | | + | + | + | |
+| `src/services/worker/http/routes/SettingsRoutes.ts` | | | | | | | | | | | | + | + | | | | | |
+| `src/services/worker/http/routes/SessionRoutes.ts` | | + | | | | + | + | + | + | | | | + | + | | | | |
+| `src/services/worker/http/middleware.ts` | | | | | | | | | | | | + | | | | | | |
+| `src/ui/viewer/types.ts` | | | | | | | | | | | | + | + | | | | | |
+| `src/ui/viewer/constants/settings.ts` | | | | | | | | | | | | + | + | | | | | |
+| `src/ui/viewer/constants/api.ts` | | | | | | | | | | | | | + | | | | | |
+| `src/ui/viewer/hooks/useSettings.ts` | | | | | | | | | | | | + | + | | | | | |
+| `src/ui/viewer/hooks/useModelFetch.ts` | | | | | | | | | | | | | + | | | | | |
+| `src/ui/viewer/components/ContextSettingsModal.tsx` | | | | | | | | | | | | + | + | | | | | |
+| `src/utils/url-utils.ts` | | | | | | | | | | | | | + | | | | | |
+| `src/services/worker/agents/types.ts` | | | | | + | | | | | | | | + | | | | | |
+| `src/services/worker/agents/FallbackErrorHandler.ts` | | | | | + | | | | | | | | | | | | | |
+| `src/services/worker/agents/index.ts` | | | | | + | | | | | | | | | | | | | |
+| `src/services/worker/utils/HistoryTruncation.ts` | | | | | + | | | | | | | | | | | | | |
+| `src/utils/claude-md-utils.ts` | | | | | | | | | | | | | | | + | | | |
+| `src/services/worker/agents/ResponseProcessor.ts` | | | | | | | | | + | | | | | + | + | | | |
+| `src/sdk/prompts.ts` | | | | | | | | | | | | | | | | + | | |
+| `src/services/worker/settings/SettingsWatcher.ts` | | | | | | | | | | | | | | + | | | | |
+| `src/cli/handlers/session-init.ts` | | | | | | | | | | | | | | | | | + | |
+| `package.json` | | | | | | | | | | | | | | | | | | + |
+| `plugin/package.json` | | | | | | | | | | | | | | | | | | + |
+| `plugin/.claude-plugin/plugin.json` | | | | | | | | | | | | | | | | | | + |
+| `.claude-plugin/marketplace.json` | | | | | | | | | | | | | | | | | + |
+| `README.md` | | | | | | | | | | | | + | | | | | |
 
 ---
 
