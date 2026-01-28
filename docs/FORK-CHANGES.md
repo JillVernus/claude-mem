@@ -3,10 +3,11 @@
 This document is a step-by-step guide for merging upstream releases into the JillVernus fork.
 Categories are ordered by severity (critical fixes first).
 
-**Current Fork Version**: `9.0.8-jv.4`
+**Current Fork Version**: `9.0.8-jv.5`
 **Upstream Base**: `v9.0.8` (commit `bab8f554`)
 **Last Merge**: 2026-01-26
 **Recent Updates**:
+- `9.0.8-jv.5`: Sync Script Dotfile Fix - `cp -r plugin/*` didn't copy dotfiles (`.mcp.json`), causing MCP tools to disappear after updates
 - `9.0.8-jv.4`: Provider Switch API Flood Fix - staggered session restarts + idle session cleanup timer prevents orphaned sessions
 - `9.0.8-jv.3`: Stuck Message Recovery Bugfix Phase 4 - periodic orphan recovery with configurable interval + jitter
 - `9.0.8-jv.2`: Stuck Message Recovery Bugfix Phases 1-3 - terminal error handling, session cache refresh, provider selection fix, crash recovery hardening
@@ -41,67 +42,69 @@ Categories are ordered by severity (critical fixes first).
 | 6 | O: Safe Message Processing | Bugfix - claim→process→delete prevents message loss + orphan recovery + timeout recovery | 8 | Active |
 | 7 | Q: Stuck Message Recovery Bugfix | Bugfix - terminal error handling, cache refresh, provider selection, periodic recovery | 5 | Active |
 | 8 | R: Idle Session Cleanup | Bugfix - staggered restarts + cleanup orphaned sessions after idle timeout | 3 | Active |
-| 9 | E: Empty Search Params Fix | MCP usability - empty search returns results | 2 | Active |
-| 9 | D: MCP Schema Enhancement | MCP usability - visible tool parameters | 1 | Active |
-| 10 | H: Custom API Endpoints | Feature - configurable Gemini/OpenAI endpoints | 9 | Active |
-| 11 | K: Dynamic Model Selection | Feature - URL normalization, model fetching, OpenRouter→OpenAI | 15 | Active |
-| 12 | L: Settings Hot-Reload | Feature - apply settings changes without worker restart | 7 | Active |
-| 13 | I: Folder CLAUDE.md Optimization | Fix - disable by default, no empty files | 3 | Active |
-| 14 | B: Observation Batching | Cost reduction - batch API calls | 5 | ⏸️ ON HOLD |
-| 15 | F: Autonomous Execution Prevention | Safety - block SDK autonomous behavior | 3 | ⏸️ ON HOLD |
-| 16 | G: Fork Configuration | Identity - version and marketplace config | 4 | Active |
+| 9 | S: Sync Script Dotfile Fix | Bugfix - sync script now copies dotfiles (`.mcp.json`) | 1 | Active |
+| 10 | E: Empty Search Params Fix | MCP usability - empty search returns results | 2 | Active |
+| 10 | D: MCP Schema Enhancement | MCP usability - visible tool parameters | 1 | Active |
+| 11 | H: Custom API Endpoints | Feature - configurable Gemini/OpenAI endpoints | 9 | Active |
+| 12 | K: Dynamic Model Selection | Feature - URL normalization, model fetching, OpenRouter→OpenAI | 15 | Active |
+| 13 | L: Settings Hot-Reload | Feature - apply settings changes without worker restart | 7 | Active |
+| 14 | I: Folder CLAUDE.md Optimization | Fix - disable by default, no empty files | 3 | Active |
+| 15 | B: Observation Batching | Cost reduction - batch API calls | 5 | ⏸️ ON HOLD |
+| 16 | F: Autonomous Execution Prevention | Safety - block SDK autonomous behavior | 3 | ⏸️ ON HOLD |
+| 17 | G: Fork Configuration | Identity - version and marketplace config | 4 | Active |
 
 ### Files by Category
 
-| File | P | A | J | M | N | O | Q | R | E | D | H | K | L | I | B | F | G |
-|------|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
-| `src/services/worker/SDKAgent.ts` | | | | | + | + | + | | | | | | | | + | + | |
-| `src/services/worker/SessionManager.ts` | | | | | + | + | + | + | | | | | + | | + | | |
-| `src/services/worker-service.ts` | | | | | | | + | | | | | + | + | | | | |
-| `src/services/worker-types.ts` | | | | | + | + | + | + | | | | | + | + | | | | |
-| `src/services/sqlite/SessionStore.ts` | | | | | | + | | | | | | | | | | | |
-| `src/services/sqlite/PendingMessageStore.ts` | | | | | | | | | + | | | | | | | | |
-| `src/services/sqlite/transactions.ts` | | | | | | | | | + | | | | | | | | |
-| `src/services/queue/SessionQueueProcessor.ts` | | | | | | | | | + | | | | | | | | |
-| `src/types/database.ts` | | | | | | + | | | | | | | | | | | |
-| `src/shared/worker-utils.ts` | | | + | | | | | | | | | | | | | | |
-| `src/services/infrastructure/HealthMonitor.ts` | | | + | | | | | | | | | | | | | | |
-| `plugin/scripts/worker-cli.js` | | | + | | | | | | | | | | | | | | |
-| `plugin/scripts/smart-install.js` | | | + | | | | | | | | | | | | | | |
-| `src/services/worker/BranchManager.ts` | | | + | | | | | | | | | | | | | | |
-| `src/services/integrations/CursorHooksInstaller.ts` | | | + | | | | | | | | | | | | | | |
-| `src/services/context/ContextBuilder.ts` | | | + | | | | | | | | | | | | | | |
-| `src/services/sync/ChromaSync.ts` | | | + | | | | | | | | | | | | | | |
-| `src/services/worker/GeminiAgent.ts` | | | | + | + | | | | + | | | + | + | | | | | |
-| `src/services/worker/OpenAIAgent.ts` | | | | + | + | | | | + | | | + | + | | | | | |
-| `src/services/worker/SearchManager.ts` | | | | | | | | | | + | | | | | | | | |
-| `src/services/sqlite/SessionSearch.ts` | | | | | | | | | | + | | | | | | | | |
-| `src/servers/mcp-server.ts` | | | | | | | | | | | + | | | | | | | |
-| `src/shared/SettingsDefaultsManager.ts` | | | | | + | + | + | | | | | + | + | | + | + | + | |
-| `src/services/worker/http/routes/SettingsRoutes.ts` | | | | | | | | | | | | + | + | | | | | |
-| `src/services/worker/http/routes/SessionRoutes.ts` | | + | | | | + | + | + | + | | | | + | + | | | | |
-| `src/services/worker/http/middleware.ts` | | | | | | | | | | | | + | | | | | | |
-| `src/ui/viewer/types.ts` | | | | | | | | | | | | + | + | | | | | |
-| `src/ui/viewer/constants/settings.ts` | | | | | | | | | | | | + | + | | | | | |
-| `src/ui/viewer/constants/api.ts` | | | | | | | | | | | | | + | | | | | |
-| `src/ui/viewer/hooks/useSettings.ts` | | | | | | | | | | | | + | + | | | | | |
-| `src/ui/viewer/hooks/useModelFetch.ts` | | | | | | | | | | | | | + | | | | | |
-| `src/ui/viewer/components/ContextSettingsModal.tsx` | | | | | | | | | | | | + | + | | | | | |
-| `src/utils/url-utils.ts` | | | | | | | | | | | | | + | | | | | |
-| `src/services/worker/agents/types.ts` | | | | | + | | | | | | | | + | | | | | |
-| `src/services/worker/agents/FallbackErrorHandler.ts` | | | | | + | | | | | | | | | | | | | |
-| `src/services/worker/agents/index.ts` | | | | | + | | | | | | | | | | | | | |
-| `src/services/worker/utils/HistoryTruncation.ts` | | | | | + | | | | | | | | | | | | | |
-| `src/utils/claude-md-utils.ts` | | | | | | | | | | | | | | | + | | | |
-| `src/services/worker/agents/ResponseProcessor.ts` | | | | | | | | | + | | | | | + | + | | | |
-| `src/sdk/prompts.ts` | | | | | | | | | | | | | | | | + | | |
-| `src/services/worker/settings/SettingsWatcher.ts` | | | | | | | | | | | | | | + | | | | |
-| `src/cli/handlers/session-init.ts` | | | | | | | | | | | | | | | | | + | |
-| `package.json` | | | | | | | | | | | | | | | | | | + |
-| `plugin/package.json` | | | | | | | | | | | | | | | | | | + |
-| `plugin/.claude-plugin/plugin.json` | | | | | | | | | | | | | | | | | | + |
-| `.claude-plugin/marketplace.json` | | | | | | | | | | | | | | | | | + |
-| `README.md` | | | | | | | | | | | | + | | | | | |
+| File | P | A | J | M | N | O | Q | R | S | E | D | H | K | L | I | B | F | G |
+|------|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+| `scripts/sync-marketplace.cjs` | | | | | | | | | + | | | | | | | | | |
+| `src/services/worker/SDKAgent.ts` | | | | | + | + | + | | | | | | | | | + | + | |
+| `src/services/worker/SessionManager.ts` | | | | | + | + | + | + | | | | | | + | | + | | |
+| `src/services/worker-service.ts` | | | | | | | + | | | | | | + | + | | | | |
+| `src/services/worker-types.ts` | | | | | + | + | + | + | | | | | | + | + | | | | |
+| `src/services/sqlite/SessionStore.ts` | | | | | | + | | | | | | | | | | | | |
+| `src/services/sqlite/PendingMessageStore.ts` | | | | | | | | | | + | | | | | | | | |
+| `src/services/sqlite/transactions.ts` | | | | | | | | | | + | | | | | | | | |
+| `src/services/queue/SessionQueueProcessor.ts` | | | | | | | | | | + | | | | | | | | |
+| `src/types/database.ts` | | | | | | + | | | | | | | | | | | | |
+| `src/shared/worker-utils.ts` | | | + | | | | | | | | | | | | | | | |
+| `src/services/infrastructure/HealthMonitor.ts` | | | + | | | | | | | | | | | | | | | |
+| `plugin/scripts/worker-cli.js` | | | + | | | | | | | | | | | | | | | |
+| `plugin/scripts/smart-install.js` | | | + | | | | | | | | | | | | | | | |
+| `src/services/worker/BranchManager.ts` | | | + | | | | | | | | | | | | | | | |
+| `src/services/integrations/CursorHooksInstaller.ts` | | | + | | | | | | | | | | | | | | | |
+| `src/services/context/ContextBuilder.ts` | | | + | | | | | | | | | | | | | | | |
+| `src/services/sync/ChromaSync.ts` | | | + | | | | | | | | | | | | | | | |
+| `src/services/worker/GeminiAgent.ts` | | | | + | + | | | | | + | | | + | + | | | | | |
+| `src/services/worker/OpenAIAgent.ts` | | | | + | + | | | | | + | | | + | + | | | | | |
+| `src/services/worker/SearchManager.ts` | | | | | | | | | | | + | | | | | | | | |
+| `src/services/sqlite/SessionSearch.ts` | | | | | | | | | | | + | | | | | | | | |
+| `src/servers/mcp-server.ts` | | | | | | | | | | | | + | | | | | | | |
+| `src/shared/SettingsDefaultsManager.ts` | | | | | + | + | + | | | | | | + | + | | + | + | + | |
+| `src/services/worker/http/routes/SettingsRoutes.ts` | | | | | | | | | | | | | + | + | | | | | |
+| `src/services/worker/http/routes/SessionRoutes.ts` | | + | | | | + | + | + | | + | | | | + | + | | | | |
+| `src/services/worker/http/middleware.ts` | | | | | | | | | | | | | + | | | | | | |
+| `src/ui/viewer/types.ts` | | | | | | | | | | | | | + | + | | | | | |
+| `src/ui/viewer/constants/settings.ts` | | | | | | | | | | | | | + | + | | | | | |
+| `src/ui/viewer/constants/api.ts` | | | | | | | | | | | | | | + | | | | | |
+| `src/ui/viewer/hooks/useSettings.ts` | | | | | | | | | | | | | + | + | | | | | |
+| `src/ui/viewer/hooks/useModelFetch.ts` | | | | | | | | | | | | | | + | | | | | |
+| `src/ui/viewer/components/ContextSettingsModal.tsx` | | | | | | | | | | | | | + | + | | | | | |
+| `src/utils/url-utils.ts` | | | | | | | | | | | | | | + | | | | | |
+| `src/services/worker/agents/types.ts` | | | | | + | | | | | | | | | + | | | | | |
+| `src/services/worker/agents/FallbackErrorHandler.ts` | | | | | + | | | | | | | | | | | | | | |
+| `src/services/worker/agents/index.ts` | | | | | + | | | | | | | | | | | | | | |
+| `src/services/worker/utils/HistoryTruncation.ts` | | | | | + | | | | | | | | | | | | | | |
+| `src/utils/claude-md-utils.ts` | | | | | | | | | | | | | | | | + | | | |
+| `src/services/worker/agents/ResponseProcessor.ts` | | | | | | | | | | + | | | | | + | + | | | |
+| `src/sdk/prompts.ts` | | | | | | | | | | | | | | | | | + | | |
+| `src/services/worker/settings/SettingsWatcher.ts` | | | | | | | | | | | | | | | + | | | | |
+| `src/cli/handlers/session-init.ts` | | | | | | | | | | | | | | | | | | + | |
+| `package.json` | | | | | | | | | | | | | | | | | | | + |
+| `plugin/package.json` | | | | | | | | | | | | | | | | | | | + |
+| `plugin/.claude-plugin/plugin.json` | | | | | | | | | | | | | | | | | | | + |
+| `.claude-plugin/marketplace.json` | | | | | | | | | | | | | | | | | | + |
+| `README.md` | | | | | | | | | | | | | + | | | | | | |
 
 ---
 
@@ -188,6 +191,13 @@ grep -n 'getPackageRoot' src/services/infrastructure/HealthMonitor.ts
 grep -n 'thedotmack' src/shared/worker-utils.ts  # Should return NOTHING
 ```
 Expected: First two have matches, third returns nothing.
+
+#### Category S: Sync Script Dotfile Fix
+```bash
+grep -n 'cp -r plugin/\\.' scripts/sync-marketplace.cjs
+cat ~/.claude/plugins/marketplaces/jillvernus/.mcp.json  # Should have mcpServers.mcp-search configured
+```
+Expected: `cp -r plugin/.` syntax (copies dotfiles), and .mcp.json should have proper MCP config.
 
 #### Category E: Empty Search Params Fix
 ```bash
@@ -990,6 +1000,36 @@ grep -n 'CLAUDE_MEM_PERIODIC_RECOVERY' src/shared/SettingsDefaultsManager.ts
 ```
 
 **Plan**: `docs/plans/2026-01-26-stuck-message-recovery-bugfix.md`
+
+---
+
+### Category S: Sync Script Dotfile Fix (Priority 9)
+
+**Problem**: After updating claude-mem, the MCP tools disappear. The sync script uses `cp -r plugin/*` which doesn't copy hidden files (dotfiles) like `.mcp.json`.
+
+**Solution**: Change `cp -r plugin/*` to `cp -r plugin/.` which copies all files including dotfiles.
+
+**Files**:
+| File | Change |
+|------|--------|
+| `scripts/sync-marketplace.cjs:64` | Change `plugin/*` to `plugin/.` for marketplace sync |
+| `scripts/sync-marketplace.cjs:81` | Change `plugin/*` to `plugin/.` for cache sync |
+
+**Key Details**:
+- `cp -r plugin/*` - shell glob doesn't include dotfiles (`.mcp.json`, `.git`, etc.)
+- `cp -r plugin/.` - copies directory contents including all hidden files
+- The `.mcp.json` file configures MCP servers for Claude Code
+- Without this fix, MCP tools disappear after every marketplace update
+
+**Verification**:
+```bash
+# Check sync script uses correct syntax
+grep -n 'cp -r plugin/\\.' scripts/sync-marketplace.cjs
+
+# After sync, verify MCP config exists
+cat ~/.claude/plugins/marketplaces/jillvernus/.mcp.json
+# Should show: {"mcpServers":{"mcp-search":{...}}}
+```
 
 ---
 

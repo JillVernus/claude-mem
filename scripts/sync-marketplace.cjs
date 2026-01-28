@@ -60,9 +60,10 @@ function getPluginVersion() {
 // Normal sync for main branch or fresh install (using cp for portability)
 console.log('Syncing to marketplace...');
 try {
-  // Use cp instead of rsync for environments without rsync
+  // Use cp with trailing dot to include hidden files (like .mcp.json)
+  // The /. syntax copies directory contents including dotfiles
   execSync(
-    'cp -r plugin/* ~/.claude/plugins/marketplaces/jillvernus/',
+    'cp -r plugin/. ~/.claude/plugins/marketplaces/jillvernus/',
     { stdio: 'inherit' }
   );
 
@@ -78,7 +79,7 @@ try {
 
   console.log(`Syncing to cache folder (version ${version})...`);
   execSync(
-    `mkdir -p "${CACHE_VERSION_PATH}" && cp -r plugin/* "${CACHE_VERSION_PATH}/"`,
+    `mkdir -p "${CACHE_VERSION_PATH}" && cp -r plugin/. "${CACHE_VERSION_PATH}/"`,
     { stdio: 'inherit' }
   );
 
